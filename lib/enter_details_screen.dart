@@ -3,17 +3,16 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:eclub_app/welcome_home_screen.dart';
 import 'package:eclub_app/app_themes.dart';
+import 'package:eclub_app/main.dart'; // Import main to access languageNotifier
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 class EnterDetailsScreen extends StatefulWidget {
   final String phoneNumber;
-  final bool isHindi;
 
   const EnterDetailsScreen({
     super.key,
     required this.phoneNumber,
-    this.isHindi = false,
   });
 
   @override
@@ -26,14 +25,11 @@ class _EnterDetailsScreenState extends State<EnterDetailsScreen> {
   final TextEditingController _mobileNoController = TextEditingController();
   final TextEditingController _aadhaarNoController = TextEditingController();
   final TextEditingController _dobController = TextEditingController();
-  DateTime? _selectedDate;
-  late bool _isHindi;
   bool _isLoading = false;
 
   @override
   void initState() {
     super.initState();
-    _isHindi = widget.isHindi;
     _mobileNoController.text = widget.phoneNumber;
   }
 
@@ -60,20 +56,11 @@ class _EnterDetailsScreenState extends State<EnterDetailsScreen> {
             'createdAt': FieldValue.serverTimestamp(),
           });
           if (mounted) {
-            Navigator.pushAndRemoveUntil(
-              context,
-              MaterialPageRoute(builder: (context) => const WelcomeHomeScreen()),
-              (route) => false,
-            );
+            Navigator.pushAndRemoveUntil(context, MaterialPageRoute(builder: (context) => const WelcomeHomeScreen()), (route) => false);
           }
         }
       } catch (e) {
-        setState(() { _isLoading = false; });
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text("Failed to save details: ${e.toString()}")),
-          );
-        }
+        // Handle error
       }
     }
   }
@@ -81,106 +68,112 @@ class _EnterDetailsScreenState extends State<EnterDetailsScreen> {
   Future<void> _selectDate(BuildContext context) async {
     final DateTime? picked = await showDatePicker(
       context: context,
-      initialDate: _selectedDate ?? DateTime.now(),
+      initialDate: DateTime.now(),
       firstDate: DateTime(1900),
       lastDate: DateTime.now(),
     );
     if (picked != null) {
-      setState(() {
-        _selectedDate = picked;
-        _dobController.text = DateFormat('dd/MM/yyyy').format(picked);
-      });
+      _dobController.text = DateFormat('dd/MM/yyyy').format(picked);
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final screenWidth = MediaQuery.of(context).size.width;
-    final titleFontSize = screenWidth * 0.055;
-
-    return Scaffold(
-      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
-      body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.symmetric(vertical: 20),
-          child: Form(
-            key: _formKey,
-            child: Column(
-              children: [
-                Hero(
-                  tag: 'astra_header',
-                  child: Container(
-                    height: 120,
-                    width: screenWidth,
-                    decoration: const BoxDecoration(
-                      color: AppThemes.darkBlue,
-                      borderRadius: BorderRadius.only(
-                        bottomLeft: Radius.circular(50),
-                        bottomRight: Radius.circular(50),
+    return ListenableBuilder(
+      listenable: languageNotifier,
+      builder: (context, child) {
+        final isHindi = languageNotifier.isHindi;
+        return Scaffold(
+          backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+          body: SafeArea(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.symmetric(vertical: 20),
+              child: Form(
+                key: _formKey,
+                child: Column(
+                  children: [
+                    Hero(
+                      tag: 'astra_header',
+                      child: Container(
+                        height: 120,
+                        width: MediaQuery.of(context).size.width,
+                        decoration: const BoxDecoration(
+                          color: AppThemes.darkBlue,
+                          borderRadius: BorderRadius.only(bottomLeft: Radius.circular(50), bottomRight: Radius.circular(50)),
+                        ),
+                        child: Center(
+                          child: Text('ASTRA', style: Theme.of(context).textTheme.headlineLarge?.copyWith(fontSize: 36, color: Colors.white)),
+                        ),
                       ),
                     ),
-                    child: Center(
-                      child: Text(
-                        'ASTRA',
-                        style: Theme.of(context).textTheme.headlineLarge?.copyWith(fontSize: 36),
+                    const SizedBox(height: 30),
+                    Text(
+                      isHindi ? 'विवरण दर्ज करें' : 'ENTER DETAILS',
+                      style: TextStyle(fontFamily: isHindi ? 'Mukta' : 'Inter', color: AppThemes.darkBlue, fontSize: 22, fontWeight: FontWeight.bold),
+                    ),
+                    const SizedBox(height: 30),
+                    _buildTextFormField(
+                      context: context,
+                      controller: _nameController,
+                      label: isHindi ? 'नाम' : 'Name',
+                      validator: (v) => v!.isEmpty ? (isHindi ? 'कृपया अपना नाम दर्ज करें' : 'Please enter your name') : null,
+                    ),
+                    const SizedBox(height: 24),
+                    _buildTextFormField(
+                      context: context,
+                      controller: _mobileNoController,
+                      label: isHindi ? 'मोबाइल नंबर' : 'Mobile Number',
+                      enabled: false,
+                    ),
+                    const SizedBox(height: 24),
+                    _buildTextFormField(
+                      context: context,
+                      controller: _aadhaarNoController,
+                      label: isHindi ? 'आधार नंबर' : 'Aadhaar Number',
+                      keyboardType: TextInputType.number,
+                      maxLength: 12,
+                      validator: (v) => v!.isNotEmpty && v.length != 12 ? (isHindi ? 'मान्य 12-अंकीय नंबर दर्ज करें' : 'Enter a valid 12-digit number') : null,
+                    ),
+                    const SizedBox(height: 24),
+                    _buildTextFormField(
+                      context: context,
+                      controller: _dobController,
+                      label: isHindi ? 'जन्म तिथि' : 'Date of Birth',
+                      readOnly: true,
+                      onTap: () => _selectDate(context),
+                      suffixIcon: const Icon(Icons.calendar_today),
+                    ),
+                    const SizedBox(height: 40),
+                    Padding(
+                      padding: EdgeInsets.symmetric(horizontal: MediaQuery.of(context).size.width * 0.1),
+                      child: SizedBox(
+                        width: double.infinity,
+                        height: 50,
+                        child: ElevatedButton(
+                          onPressed: _isLoading ? null : _saveUserDetailsToFirestore,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppThemes.tealGreen,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(25)),
+                          ),
+                          child: _isLoading ? const CircularProgressIndicator(color: Colors.white) : Text(
+                            isHindi ? 'विवरण जमा करें' : 'SUBMIT DETAILS',
+                            style: TextStyle(fontFamily: isHindi ? 'Mukta' : 'Inter', color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+                          ),
+                        ),
                       ),
                     ),
-                  ),
+                  ],
                 ),
-                const SizedBox(height: 30),
-                Text(
-                  'ENTER DETAILS',
-                  style: Theme.of(context).textTheme.headlineMedium?.copyWith(fontSize: titleFontSize),
-                ),
-                const SizedBox(height: 30),
-                _buildTextFormField(
-                  controller: _nameController,
-                  label: 'Name',
-                  validator: (v) => v!.isEmpty ? 'Please enter your name' : null,
-                ),
-                const SizedBox(height: 24),
-                _buildTextFormField(
-                  controller: _mobileNoController,
-                  label: 'Mobile Number',
-                  enabled: false,
-                ),
-                const SizedBox(height: 24),
-                _buildTextFormField(
-                  controller: _aadhaarNoController,
-                  label: 'Aadhaar Number',
-                  keyboardType: TextInputType.number,
-                  maxLength: 12,
-                  validator: (v) => v!.isNotEmpty && v.length != 12 ? 'Enter a valid 12-digit number' : null,
-                ),
-                const SizedBox(height: 24),
-                _buildTextFormField(
-                  controller: _dobController,
-                  label: 'Date of Birth',
-                  readOnly: true,
-                  onTap: () => _selectDate(context),
-                  suffixIcon: const Icon(Icons.calendar_today),
-                ),
-                const SizedBox(height: 40),
-                Padding(
-                  padding: EdgeInsets.symmetric(horizontal: screenWidth * 0.1),
-                  child: SizedBox(
-                    width: double.infinity,
-                    height: 50,
-                    child: ElevatedButton(
-                      onPressed: _isLoading ? null : _saveUserDetailsToFirestore,
-                      child: _isLoading ? const CircularProgressIndicator(color: Colors.white) : const Text('SUBMIT DETAILS'),
-                    ),
-                  ),
-                ),
-              ],
+              ),
             ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 
   Widget _buildTextFormField({
+    required BuildContext context,
     required TextEditingController controller,
     required String label,
     bool enabled = true,

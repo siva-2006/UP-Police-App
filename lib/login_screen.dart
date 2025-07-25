@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:eclub_app/otp_verification_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:eclub_app/app_themes.dart';
+import 'package:eclub_app/main.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -14,7 +15,6 @@ class LoginScreen extends StatefulWidget {
 
 class _LoginScreenState extends State<LoginScreen> {
   final TextEditingController _phoneController = TextEditingController();
-  bool _isHindi = false;
   bool _isLoading = false;
   String? _phoneErrorText;
 
@@ -30,30 +30,25 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _sendOtp() async {
-    setState(() {
-      _isLoading = true;
-    });
-
+    setState(() => _isLoading = true);
     final String phoneNumber = '+91${_phoneController.text.trim()}';
-    final FirebaseAuth auth = FirebaseAuth.instance;
-
-    await auth.verifyPhoneNumber(
+    await FirebaseAuth.instance.verifyPhoneNumber(
       phoneNumber: phoneNumber,
       verificationCompleted: (PhoneAuthCredential credential) async {
-        await auth.signInWithCredential(credential);
-        setState(() { _isLoading = false; });
+        await FirebaseAuth.instance.signInWithCredential(credential);
+        if (mounted) setState(() => _isLoading = false);
       },
       verificationFailed: (FirebaseAuthException e) {
-        setState(() { _isLoading = false; });
         if (mounted) {
+          setState(() => _isLoading = false);
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text("Failed to send OTP: ${e.message}")),
           );
         }
       },
       codeSent: (String verificationId, int? resendToken) {
-        setState(() { _isLoading = false; });
         if (mounted) {
+          setState(() => _isLoading = false);
           Navigator.push(
             context,
             MaterialPageRoute(
@@ -61,28 +56,25 @@ class _LoginScreenState extends State<LoginScreen> {
                 phoneNumber: _phoneController.text.trim(),
                 verificationId: verificationId,
                 resendToken: resendToken,
-                isHindi: _isHindi,
               ),
             ),
           );
         }
       },
       codeAutoRetrievalTimeout: (String verificationId) {
-        setState(() { _isLoading = false; });
+        if (mounted) setState(() => _isLoading = false);
       },
     );
   }
 
-  void _validateAndSendOtp() {
+  void _validateAndSendOtp(bool isHindi) {
     if (_phoneController.text.trim().length == 10) {
-      setState(() {
-        _phoneErrorText = null;
-      });
+      setState(() => _phoneErrorText = null);
       _savePhoneNumber(_phoneController.text.trim());
       _sendOtp();
     } else {
       setState(() {
-        _phoneErrorText = _isHindi
+        _phoneErrorText = isHindi
             ? 'कृपया एक मान्य 10-अंकीय फ़ोन नंबर दर्ज करें'
             : 'Enter valid 10-digit number';
       });
@@ -91,106 +83,107 @@ class _LoginScreenState extends State<LoginScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final screenWidth = MediaQuery.of(context).size.width;
-    final screenHeight = MediaQuery.of(context).size.height;
+    return ListenableBuilder(
+      listenable: languageNotifier,
+      builder: (context, child) {
+        final isHindi = languageNotifier.isHindi;
+        final screenHeight = MediaQuery.of(context).size.height;
+        final screenWidth = MediaQuery.of(context).size.width;
 
-    // Responsive font sizes
-    final double titleFontSize = screenWidth * 0.055;
-    final double bodyFontSize = screenWidth * 0.04;
-
-    final hindiTextStyle = TextStyle(fontFamily: 'Mukta', fontSize: bodyFontSize, color: Theme.of(context).textTheme.bodyLarge?.color);
-    final hindiTitleStyle = TextStyle(fontFamily: 'Mukta', color: Theme.of(context).textTheme.headlineMedium?.color, fontSize: titleFontSize, fontWeight: FontWeight.bold);
-    final hindiButtonStyle = const TextStyle(fontFamily: 'Mukta', color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold);
-
-    return Scaffold(
-      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
-      body: SafeArea(
-        child: SingleChildScrollView(
-          child: Column(
-            children: [
-              Container(
-                height: screenHeight * 0.17,
-                width: screenWidth,
-                decoration: const BoxDecoration(
-                  color: AppThemes.darkBlue,
-                  borderRadius: BorderRadius.only(
-                    bottomLeft: Radius.circular(35),
-                    bottomRight: Radius.circular(35),
-                  ),
-                ),
-                child: Center(
-                  child: Text(
-                    'ASTRA',
-                    style: Theme.of(context).textTheme.headlineLarge?.copyWith(fontSize: 36),
-                  ),
-                ),
-              ),
-              SizedBox(height: screenHeight * 0.03),
-              Text(
-                _isHindi ? 'लॉगिन/रजिस्टर' : 'LOGIN/REGISTER',
-                style: _isHindi
-                  ? hindiTitleStyle
-                  : Theme.of(context).textTheme.headlineMedium?.copyWith(fontSize: titleFontSize),
-              ),
-              SizedBox(height: screenHeight * 0.03),
-              Image.asset(
-                'assets/images/image_6d3861.png',
-                height: screenHeight * 0.19,
-              ),
-              SizedBox(height: screenHeight * 0.05),
-              Padding(
-                padding: EdgeInsets.symmetric(horizontal: screenWidth * 0.1),
-                child: TextField(
-                  controller: _phoneController,
-                  keyboardType: TextInputType.phone,
-                  maxLength: 10,
-                  style: Theme.of(context).textTheme.bodyLarge?.copyWith(fontSize: bodyFontSize),
-                  decoration: InputDecoration(
-                    counterText: "",
-                    labelText: _isHindi ? 'मोबाइल नंबर' : 'Mobile Number',
-                    errorText: _phoneErrorText,
-                    border: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(8))),
-                  ),
-                ),
-              ),
-              SizedBox(height: screenHeight * 0.04),
-              Padding(
-                padding: EdgeInsets.symmetric(horizontal: screenWidth * 0.1),
-                child: Container(
-                  width: double.infinity,
-                  height: 50,
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(25),
-                    gradient: const LinearGradient(
-                      colors: [AppThemes.tealGreen, Colors.teal],
+        return Scaffold(
+          backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+          body: SafeArea(
+            child: SingleChildScrollView(
+              child: Column(
+                children: [
+                  Container(
+                    height: screenHeight * 0.17,
+                    width: screenWidth,
+                    decoration: const BoxDecoration(
+                      color: AppThemes.darkBlue,
+                      borderRadius: BorderRadius.only(
+                        bottomLeft: Radius.circular(35),
+                        bottomRight: Radius.circular(35),
+                      ),
+                    ),
+                    child: Center(
+                      child: Text(
+                        'ASTRA',
+                        style: Theme.of(context).textTheme.headlineLarge?.copyWith(fontSize: 36, color: Colors.white),
+                      ),
                     ),
                   ),
-                  child: MaterialButton(
-                    onPressed: _isLoading ? null : _validateAndSendOtp,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(25)),
-                    child: _isLoading
-                        ? const CircularProgressIndicator(color: Colors.white)
-                        : Text(
-                            _isHindi ? 'ओटीपी भेजें' : 'SEND OTP',
-                            style: _isHindi ? hindiButtonStyle : const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
-                          ),
+                  SizedBox(height: screenHeight * 0.03),
+                  Text(
+                    isHindi ? 'लॉगिन/रजिस्टर' : 'LOGIN/REGISTER',
+                    style: TextStyle(
+                      fontFamily: isHindi ? 'Mukta' : 'Inter',
+                      color: AppThemes.darkBlue,
+                      fontSize: 22,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
-                ),
+                  SizedBox(height: screenHeight * 0.03),
+                  Image.asset('assets/images/image_6d3861.png', height: screenHeight * 0.19),
+                  SizedBox(height: screenHeight * 0.05),
+                  Padding(
+                    padding: EdgeInsets.symmetric(horizontal: screenWidth * 0.1),
+                    child: TextField(
+                      controller: _phoneController,
+                      keyboardType: TextInputType.phone,
+                      maxLength: 10,
+                      decoration: InputDecoration(
+                        counterText: "",
+                        labelText: isHindi ? 'मोबाइल नंबर' : 'Mobile Number',
+                        errorText: _phoneErrorText,
+                        border: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(8))),
+                      ),
+                    ),
+                  ),
+                  SizedBox(height: screenHeight * 0.04),
+                  Padding(
+                    padding: EdgeInsets.symmetric(horizontal: screenWidth * 0.1),
+                    child: SizedBox(
+                      width: double.infinity,
+                      height: 50,
+                      child: ElevatedButton(
+                        onPressed: _isLoading ? null : () => _validateAndSendOtp(isHindi),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppThemes.tealGreen,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(25)),
+                        ),
+                        child: _isLoading
+                            ? const CircularProgressIndicator(color: Colors.white)
+                            : Text(
+                                isHindi ? 'ओटीपी भेजें' : 'SEND OTP',
+                                style: TextStyle(
+                                    fontFamily: isHindi ? 'Mukta' : 'Inter',
+                                    color: Colors.white,
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.bold),
+                              ),
+                      ),
+                    ),
+                  ),
+                  SizedBox(height: screenHeight * 0.07),
+                  TextButton(
+                    onPressed: () => languageNotifier.toggleLanguage(),
+                    child: Text(
+                      isHindi ? 'Change Language' : 'भाषा बदलें',
+                      style: TextStyle(
+                        fontFamily: isHindi ? 'Inter' : 'Mukta',
+                        fontSize: 15,
+                        decoration: TextDecoration.underline,
+                      ),
+                    ),
+                  ),
+                  SizedBox(height: screenHeight * 0.03),
+                ],
               ),
-              SizedBox(height: screenHeight * 0.07),
-              TextButton(
-                onPressed: () => setState(() => _isHindi = !_isHindi),
-                child: Text(
-                  _isHindi ? 'Change Language' : 'भाषा बदलें',
-                  style: (_isHindi ? TextStyle(fontFamily: 'Inter', fontSize: bodyFontSize) : hindiTextStyle)
-                      .copyWith(decoration: TextDecoration.underline),
-                ),
-              ),
-              SizedBox(height: screenHeight * 0.03),
-            ],
+            ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 }

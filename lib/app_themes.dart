@@ -2,13 +2,11 @@
 import 'package:flutter/material.dart';
 
 class AppThemes {
-  // --- Common Colors ---
   static const Color darkBlue = Color(0xFF0D1E4D);
   static const Color accentPink = Color(0xFFE91E63);
   static const Color emergencyRed = Color(0xFFD32F2F);
-  static const Color tealGreen = Color(0xFF00897B); // For buttons
+  static const Color tealGreen = Color(0xFF00897B);
 
-  // --- Light Theme ---
   static final ThemeData lightTheme = ThemeData(
     brightness: Brightness.light,
     primaryColor: darkBlue,
@@ -21,24 +19,19 @@ class AppThemes {
       titleTextStyle: TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.bold, fontFamily: 'Inter'),
     ),
     textTheme: const TextTheme(
-      // For large titles like "ASTRA" in headers
       headlineLarge: TextStyle(fontFamily: 'Overpass Mono', color: Colors.white, fontWeight: FontWeight.bold),
-      // For page titles like "ENTER DETAILS"
       headlineMedium: TextStyle(color: darkBlue, fontWeight: FontWeight.bold),
-      // Default body text
       bodyLarge: TextStyle(color: Colors.black87),
-      // Secondary or hint text
       bodyMedium: TextStyle(color: Colors.black54),
     ),
     colorScheme: ColorScheme.fromSeed(
       seedColor: darkBlue,
       brightness: Brightness.light,
       background: const Color(0xFFFDFDFD),
-      surface: Colors.grey[200], // For text field backgrounds
+      surface: Colors.grey[200],
     ),
   );
 
-  // --- Dark Theme ---
   static final ThemeData darkTheme = ThemeData(
     brightness: Brightness.dark,
     primaryColor: darkBlue,

@@ -50,7 +50,7 @@ class DefaultFirebaseOptions {
   }
 
   static const FirebaseOptions android = FirebaseOptions(
-    apiKey: 'AIzaSyAavEJcYC8y4vPTI9Vz7NpntTpEJqzpKV0',
+    apiKey: 'AIzaSyCsjWyra5StlOGDcMFi-k4gxPc6kN-q0bI',
     appId: '1:870740944719:android:49eee66d16d1a046f2c73a',
     messagingSenderId: '870740944719',
     projectId: 'up-police-app-e-club',
@@ -58,11 +58,12 @@ class DefaultFirebaseOptions {
   );
 
   static const FirebaseOptions ios = FirebaseOptions(
-    apiKey: 'AIzaSyAejkhvefuTmXsayN8ZdtfSWWnLVzarqAc',
+    apiKey: 'AIzaSyATQymAe2UVJnk32Hir7tN1w5IKrCbVxYY',
     appId: '1:870740944719:ios:96be2ddb5f3cb7cff2c73a',
     messagingSenderId: '870740944719',
     projectId: 'up-police-app-e-club',
     storageBucket: 'up-police-app-e-club.firebasestorage.app',
     iosBundleId: 'com.example.eclubApp',
   );
+
 }

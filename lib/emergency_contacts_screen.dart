@@ -1,6 +1,7 @@
 // lib/emergency_contacts_screen.dart
 import 'package:flutter/material.dart';
 import 'package:eclub_app/app_themes.dart';
+import 'package:eclub_app/main.dart'; // Import main to access languageNotifier
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter_contacts/flutter_contacts.dart';
@@ -13,26 +14,69 @@ class EmergencyContactsScreen extends StatefulWidget {
 }
 
 class _EmergencyContactsScreenState extends State<EmergencyContactsScreen> {
-  final User? _currentUser = FirebaseAuth.instance.currentUser;
-  String? expandedContactId; // Tracks which contact card is expanded
+  @override
+  Widget build(BuildContext context) {
+    return ListenableBuilder(
+      listenable: languageNotifier,
+      builder: (context, child) {
+        final isHindi = languageNotifier.isHindi;
 
-  Stream<QuerySnapshot> _getContactsStream() {
-    if (_currentUser == null) {
-      return const Stream.empty();
-    }
-    return FirebaseFirestore.instance
-        .collection('users')
-        .doc(_currentUser!.uid)
-        .collection('emergencyContacts')
-        .orderBy('name')
-        .snapshots();
+        return Scaffold(
+          backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+          appBar: AppBar(
+            title: Text(isHindi ? 'आपात संपर्क' : 'Emergency Contacts'),
+          ),
+          body: const ContactList(),
+          floatingActionButton: FloatingActionButton.extended(
+            onPressed: () => _pickAndSaveContact(context),
+            backgroundColor: AppThemes.darkBlue,
+            icon: const Icon(Icons.add, color: Colors.white),
+            label: Text(
+              isHindi ? 'संपर्क जोड़ें' : 'Add Contact',
+              style: TextStyle(
+                fontFamily: isHindi ? 'Mukta' : 'Inter',
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
+          ),
+        );
+      },
+    );
   }
 
-  Future<void> _pickAndSaveContact() async {
+  Future<void> _pickAndSaveContact(BuildContext context) async {
+    final User? currentUser = FirebaseAuth.instance.currentUser;
+    if (currentUser == null) return;
+
     if (await FlutterContacts.requestPermission()) {
+      final existingContactsSnapshot = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(currentUser.uid)
+          .collection('emergencyContacts')
+          .get();
+      final existingNumbers = existingContactsSnapshot.docs
+          .map((doc) => (doc.data()['phone'] as String).replaceAll(RegExp(r'[^0-9]'), ''))
+          .toSet();
+
       final Contact? contact = await FlutterContacts.openExternalPick();
+
       if (contact != null && contact.phones.isNotEmpty) {
-        _saveContactToFirestore(contact.displayName, contact.phones.first.number);
+        final newNumber = contact.phones.first.number.replaceAll(RegExp(r'[^0-9]'), '');
+
+        if (existingNumbers.contains(newNumber)) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('This contact is already in your emergency list.')),
+            );
+          }
+          return;
+        }
+
+        _saveContactToFirestore(currentUser.uid, contact.displayName, contact.phones.first.number);
       }
     } else {
       if (mounted) {
@@ -43,27 +87,98 @@ class _EmergencyContactsScreenState extends State<EmergencyContactsScreen> {
     }
   }
 
-  Future<void> _saveContactToFirestore(String name, String phone) async {
-    if (_currentUser == null) return;
+  Future<void> _saveContactToFirestore(String userId, String name, String phone) async {
     try {
       await FirebaseFirestore.instance
           .collection('users')
-          .doc(_currentUser!.uid)
+          .doc(userId)
           .collection('emergencyContacts')
           .add({'name': name, 'phone': phone});
     } catch (e) {
       // Handle error
     }
   }
+}
 
-  Future<void> _deleteContact(String docId) async {
-    if (_currentUser == null) return;
+class ContactList extends StatelessWidget {
+  const ContactList({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final User? currentUser = FirebaseAuth.instance.currentUser;
+    if (currentUser == null) {
+      return const Center(child: Text("Please log in."));
+    }
+
+    final isHindi = languageNotifier.isHindi;
+
+    return StreamBuilder<QuerySnapshot>(
+      stream: FirebaseFirestore.instance
+          .collection('users')
+          .doc(currentUser.uid)
+          .collection('emergencyContacts')
+          .orderBy('name')
+          .snapshots(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+          return Center(
+            child: Text(
+              isHindi ? 'कोई संपर्क नहीं जोड़ा गया है। कृपया एक आपातकालीन संपर्क जोड़ें।' : 'No contacts added. Please add an emergency contact.',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontFamily: isHindi ? 'Mukta' : 'Inter', fontSize: 16, color: Colors.grey),
+            ),
+          );
+        }
+
+        final contacts = snapshot.data!.docs;
+
+        return ListView.builder(
+          padding: const EdgeInsets.all(16.0),
+          itemCount: contacts.length,
+          itemBuilder: (context, index) {
+            final contact = contacts[index];
+            return ContactCard(
+              contactData: contact.data() as Map<String, dynamic>,
+              docId: contact.id,
+              currentUser: currentUser,
+            );
+          },
+        );
+      },
+    );
+  }
+}
+
+class ContactCard extends StatefulWidget {
+  final Map<String, dynamic> contactData;
+  final String docId;
+  final User? currentUser;
+
+  const ContactCard({
+    super.key,
+    required this.contactData,
+    required this.docId,
+    required this.currentUser,
+  });
+
+  @override
+  State<ContactCard> createState() => _ContactCardState();
+}
+
+class _ContactCardState extends State<ContactCard> {
+  bool _isExpanded = false;
+
+  Future<void> _deleteContact() async {
+    if (widget.currentUser == null) return;
     try {
       await FirebaseFirestore.instance
           .collection('users')
-          .doc(_currentUser!.uid)
+          .doc(widget.currentUser!.uid)
           .collection('emergencyContacts')
-          .doc(docId)
+          .doc(widget.docId)
           .delete();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -75,24 +190,25 @@ class _EmergencyContactsScreenState extends State<EmergencyContactsScreen> {
     }
   }
 
-  void _showDeleteConfirmationDialog(String docId, String name) {
+  void _showDeleteConfirmationDialog() {
+    final isHindi = languageNotifier.isHindi;
     showDialog(
       context: context,
       builder: (context) {
         return AlertDialog(
-          title: const Text('Confirm Deletion'),
-          content: Text('Are you sure you want to delete "$name"?'),
+          title: Text(isHindi ? 'हटाने की पुष्टि करें' : 'Confirm Deletion'),
+          content: Text('${isHindi ? 'क्या आप वाकई हटाना चाहते हैं' : 'Are you sure you want to delete'} "${widget.contactData['name']}"?'),
           actions: [
             TextButton(
               onPressed: () => Navigator.of(context).pop(),
-              child: const Text('Cancel'),
+              child: Text(isHindi ? 'रद्द करें' : 'Cancel'),
             ),
             TextButton(
               onPressed: () {
                 Navigator.of(context).pop();
-                _deleteContact(docId);
+                _deleteContact();
               },
-              child: const Text('Delete', style: TextStyle(color: Colors.red)),
+              child: Text(isHindi ? 'हटाएं' : 'Delete', style: const TextStyle(color: Colors.red)),
             ),
           ],
         );
@@ -102,125 +218,76 @@ class _EmergencyContactsScreenState extends State<EmergencyContactsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
-      appBar: AppBar(
-        backgroundColor: AppThemes.darkBlue,
-        title: const Text('Emergency Contacts'),
-        iconTheme: const IconThemeData(color: Colors.white),
-        titleTextStyle: const TextStyle(
-            color: Colors.white, fontSize: 22, fontWeight: FontWeight.bold),
-      ),
-      body: StreamBuilder<QuerySnapshot>(
-        stream: _getContactsStream(),
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          if (snapshot.hasError) {
-            return const Center(child: Text('Something went wrong.'));
-          }
-          if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-            return const Center(
-              child: Text(
-                'No contacts added. Please add an emergency contact.',
-                textAlign: TextAlign.center,
-                style: TextStyle(fontSize: 16, color: Colors.grey),
+    final isHindi = languageNotifier.isHindi;
+    final name = widget.contactData['name'] ?? (isHindi ? 'कोई नाम नहीं' : 'No Name');
+    final phone = widget.contactData['phone'] ?? (isHindi ? 'कोई नंबर नहीं' : 'No Number');
+
+    return Card(
+      elevation: 2,
+      margin: const EdgeInsets.symmetric(vertical: 8),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: () {
+          setState(() {
+            _isExpanded = !_isExpanded;
+          });
+        },
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+              child: Row(
+                children: [
+                  Icon(Icons.contacts, color: Theme.of(context).textTheme.bodyLarge?.color),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: Text(
+                      name,
+                      style: TextStyle(fontFamily: isHindi ? 'Mukta' : 'Inter', fontSize: 16, fontWeight: FontWeight.bold),
+                      overflow: TextOverflow.ellipsis,
+                      maxLines: 1,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  AnimatedRotation(
+                    turns: _isExpanded ? 0.5 : 0,
+                    duration: const Duration(milliseconds: 300),
+                    child: Icon(Icons.expand_more, color: Colors.grey.shade600),
+                  ),
+                ],
               ),
-            );
-          }
-
-          final contacts = snapshot.data!.docs;
-
-          return ListView.builder(
-            padding: const EdgeInsets.all(16.0),
-            itemCount: contacts.length,
-            itemBuilder: (context, index) {
-              final contact = contacts[index];
-              final contactData = contact.data() as Map<String, dynamic>;
-              final name = contactData['name'] ?? 'No Name';
-              final phone = contactData['phone'] ?? 'No Number';
-              final isExpanded = expandedContactId == contact.id;
-
-              return GestureDetector(
-                onTap: () {
-                  setState(() {
-                    expandedContactId = isExpanded ? null : contact.id;
-                  });
-                },
-                child: Card(
-                  elevation: 2,
-                  margin: const EdgeInsets.symmetric(vertical: 8),
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12)),
-                  child: Column(
+            ),
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 300),
+              curve: Curves.easeInOut,
+              height: _isExpanded ? 60 : 0,
+              width: double.infinity,
+              child: AnimatedOpacity(
+                duration: const Duration(milliseconds: 300),
+                opacity: _isExpanded ? 1.0 : 0.0,
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 12, 14),
+                  child: Row(
                     children: [
-                      Padding(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 12, vertical: 14),
-                        child: Row(
-                          children: [
-                            const Icon(Icons.contact_phone, color: AppThemes.darkBlue),
-                            const SizedBox(width: 10),
-                            Text(name, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-                            const Spacer(),
-                            Icon(
-                              isExpanded ? Icons.expand_less : Icons.expand_more,
-                              color: Colors.grey.shade600,
-                            ),
-                          ],
+                      const Icon(Icons.phone, size: 16, color: Colors.grey),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          phone,
+                          style: TextStyle(fontFamily: isHindi ? 'Mukta' : 'Inter', fontSize: 15, fontWeight: FontWeight.w500),
                         ),
                       ),
-                      AnimatedContainer(
-                        duration: const Duration(milliseconds: 300),
-                        curve: Curves.easeInOut,
-                        height: isExpanded ? 60 : 0,
-                        clipBehavior: Clip.hardEdge,
-                        decoration: const BoxDecoration(
-                           borderRadius: BorderRadius.only(
-                             bottomLeft: Radius.circular(12),
-                             bottomRight: Radius.circular(12),
-                           )
-                        ),
-                        child: SingleChildScrollView(
-                          child: Padding(
-                             padding: isExpanded
-                                ? const EdgeInsets.fromLTRB(16, 0, 12, 14)
-                                : EdgeInsets.zero,
-                            child: Row(
-                              children: [
-                                const Icon(Icons.phone, size: 16, color: Colors.grey),
-                                const SizedBox(width: 8),
-                                Expanded(
-                                  child: Text(
-                                    phone,
-                                    style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w500),
-                                  ),
-                                ),
-                                IconButton(
-                                  icon: const Icon(Icons.delete, color: Colors.red),
-                                  onPressed: () => _showDeleteConfirmationDialog(contact.id, name),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
+                      IconButton(
+                        icon: const Icon(Icons.delete, color: Colors.red),
+                        onPressed: _showDeleteConfirmationDialog,
                       ),
                     ],
                   ),
                 ),
-              );
-            },
-          );
-        },
-      ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: _pickAndSaveContact,
-        backgroundColor: AppThemes.darkBlue,
-        icon: const Icon(Icons.add, color: Colors.white),
-        label: const Text('Add Contact', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
+              ),
+            ),
+          ],
         ),
       ),
     );
