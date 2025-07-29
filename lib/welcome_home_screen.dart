@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:eclub_app/app_themes.dart';
 import 'package:eclub_app/home_dashboard_screen.dart';
 import 'package:eclub_app/main.dart';
-import 'package:eclub_app/qr_scan_page.dart';
+import 'package:eclub_app/qr_scan_page.dart'; // Import QrScanPage
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -148,14 +148,16 @@ class _WelcomeHomeScreenState extends State<WelcomeHomeScreen> {
                     children: [
                       IconButton(
                         icon: Icon(Icons.qr_code_scanner, size: bottomIconSize),
+                        // --- FIX APPLIED HERE ---
                         onPressed: () {
-                          Navigator.push(context, MaterialPageRoute(builder: (context) => const QrScanPage(initialScanMode: 'scan')));
+                          Navigator.push(context, MaterialPageRoute(builder: (context) => const QrScanPage()));
                         },
                       ),
                       IconButton(
                         icon: Icon(Icons.camera_alt, size: bottomIconSize),
+                        // --- FIX APPLIED HERE ---
                         onPressed: () {
-                          Navigator.push(context, MaterialPageRoute(builder: (context) => const QrScanPage(initialScanMode: 'photo')));
+                          Navigator.push(context, MaterialPageRoute(builder: (context) => const QrScanPage()));
                         },
                       ),
                       IconButton(

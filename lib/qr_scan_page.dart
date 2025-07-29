@@ -4,30 +4,27 @@ import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:eclub_app/app_themes.dart';
-import 'package:path_provider/path_provider.dart';
+import 'package:eclub_app/driver_details_screen.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'dart:convert';
 
 class QrScanPage extends StatefulWidget {
-  final String initialScanMode;
-
-  const QrScanPage({
-    super.key,
-    this.initialScanMode = 'scan',
-  });
+  const QrScanPage({super.key});
 
   @override
   State<QrScanPage> createState() => _QrScanPageState();
 }
 
 class _QrScanPageState extends State<QrScanPage> with WidgetsBindingObserver {
-  // For QR Scanning
+  // Controllers for different modes
   final MobileScannerController _qrController = MobileScannerController();
-  
-  // For Photo Capture
   CameraController? _photoController;
   List<CameraDescription>? _cameras;
   XFile? _capturedImageFile;
 
-  late String _scanMode;
+  // State variables
+  String _scanMode = 'scan'; // Default mode
   bool _isProcessing = false;
   bool _isTorchOn = false;
 
@@ -35,17 +32,16 @@ class _QrScanPageState extends State<QrScanPage> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _scanMode = widget.initialScanMode;
-    _initializeCamera();
+    _initializePhotoCamera();
   }
 
-  Future<void> _initializeCamera() async {
+  Future<void> _initializePhotoCamera() async {
     _cameras = await availableCameras();
     if (_cameras != null && _cameras!.isNotEmpty) {
-      _photoController = CameraController(_cameras![0], ResolutionPreset.high);
+      _photoController = CameraController(_cameras![0], ResolutionPreset.high, enableAudio: false);
       await _photoController!.initialize();
       if (mounted) {
-        setState(() {}); // Update UI once camera is initialized
+        setState(() {});
       }
     }
   }
@@ -53,13 +49,14 @@ class _QrScanPageState extends State<QrScanPage> with WidgetsBindingObserver {
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     super.didChangeAppLifecycleState(state);
-    if (_photoController == null || !_photoController!.value.isInitialized) {
+    final CameraController? cameraController = _photoController;
+    if (cameraController == null || !cameraController.value.isInitialized) {
       return;
     }
     if (state == AppLifecycleState.inactive) {
-      _photoController!.dispose();
+      cameraController.dispose();
     } else if (state == AppLifecycleState.resumed) {
-      _initializeCamera();
+      _initializePhotoCamera();
     }
   }
 
@@ -69,6 +66,46 @@ class _QrScanPageState extends State<QrScanPage> with WidgetsBindingObserver {
     _qrController.dispose();
     _photoController?.dispose();
     super.dispose();
+  }
+
+  Future<void> _handleScannedCode(String rawValue) async {
+    setState(() { _isProcessing = true; });
+    _qrController.stop();
+
+    try {
+      final data = jsonDecode(rawValue) as Map<String, dynamic>;
+      final driverDetails = {
+        'name': data['name'] as String? ?? 'N/A',
+        'vehicleNumber': data['vehicleNumber'] as String? ?? 'N/A',
+        'phone': data['phone'] as String? ?? 'N/A',
+      };
+      await _addRideToHistory(driverDetails);
+      if (mounted) {
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (context) => DriverDetailsScreen(driverDetails: driverDetails),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error: Invalid QR code format.')),
+        );
+        _qrController.start();
+        setState(() { _isProcessing = false; });
+      }
+    }
+  }
+  
+  Future<void> _addRideToHistory(Map<String, String> driverDetails) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+    await FirebaseFirestore.instance.collection('users').doc(user.uid).collection('rides').add({
+      ...driverDetails,
+      'timestamp': FieldValue.serverTimestamp(),
+    });
   }
 
   void _retakePhoto() {
@@ -88,7 +125,7 @@ class _QrScanPageState extends State<QrScanPage> with WidgetsBindingObserver {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.black, // Camera previews look best on black
+      backgroundColor: Colors.black,
       appBar: AppBar(
         title: Text(_scanMode == 'scan' ? 'Scan QR Code' : 'Take Photo'),
         backgroundColor: AppThemes.darkBlue,
@@ -100,14 +137,9 @@ class _QrScanPageState extends State<QrScanPage> with WidgetsBindingObserver {
               } else {
                 _photoController?.setFlashMode(_isTorchOn ? FlashMode.off : FlashMode.torch);
               }
-              setState(() {
-                _isTorchOn = !_isTorchOn;
-              });
+              setState(() { _isTorchOn = !_isTorchOn; });
             },
-            icon: Icon(
-              _isTorchOn ? Icons.flashlight_on : Icons.flashlight_off,
-              color: _isTorchOn ? Colors.yellow : Colors.white,
-            ),
+            icon: Icon(_isTorchOn ? Icons.flashlight_on : Icons.flashlight_off, color: _isTorchOn ? Colors.yellow : Colors.white),
           ),
         ],
       ),
@@ -129,7 +161,7 @@ class _QrScanPageState extends State<QrScanPage> with WidgetsBindingObserver {
       ),
     );
   }
-  
+
   Widget _buildCameraView() {
     if (_capturedImageFile != null) {
       return Image.file(File(_capturedImageFile!.path), fit: BoxFit.cover);
@@ -142,14 +174,10 @@ class _QrScanPageState extends State<QrScanPage> with WidgetsBindingObserver {
           MobileScanner(
             controller: _qrController,
             onDetect: (capture) {
-              if (_isProcessing) return;
-              if (capture.barcodes.isNotEmpty) {
-                setState(() { _isProcessing = true; });
-                final barcode = capture.barcodes.first;
-                _qrController.stop();
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('QR Scanned: ${barcode.rawValue}')),
-                );
+              if (_isProcessing || capture.barcodes.isEmpty) return;
+              final String? code = capture.barcodes.first.rawValue;
+              if (code != null) {
+                _handleScannedCode(code);
               }
             },
           ),
@@ -163,7 +191,7 @@ class _QrScanPageState extends State<QrScanPage> with WidgetsBindingObserver {
           ),
         ],
       );
-    } else { // Photo Mode
+    } else {
       if (_photoController == null || !_photoController!.value.isInitialized) {
         return const Center(child: CircularProgressIndicator());
       }
