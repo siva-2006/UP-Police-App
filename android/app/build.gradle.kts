@@ -27,7 +27,7 @@ android {
         applicationId = "com.example.eclub_app"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
-        minSdk = flutter.minSdkVersion
+        minSdk = 26
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
@@ -44,4 +44,7 @@ android {
 
 flutter {
     source = "../.."
+}  
+dependencies {
+    implementation("org.tensorflow:tensorflow-lite-task-audio:0.4.4")
 }

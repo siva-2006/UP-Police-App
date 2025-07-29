@@ -11,6 +11,7 @@
 .svn/
 .swiftpm/
 migrate_working_dir/
+/lib/firebase_options.dart
 
 # IntelliJ related
 *.iml
@@ -31,7 +32,6 @@ migrate_working_dir/
 .flutter-plugins-dependencies
 .pub-cache/
 .pub/
-/lib/firebase_options.dart
 /build/
 
 # Symbolication related

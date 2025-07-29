@@ -1,8 +1,10 @@
 // lib/qr_scan_page.dart
-import 'dart:typed_data';
+import 'dart:io';
+import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:eclub_app/app_themes.dart';
+import 'package:path_provider/path_provider.dart';
 
 class QrScanPage extends StatefulWidget {
   final String initialScanMode;
@@ -16,40 +18,69 @@ class QrScanPage extends StatefulWidget {
   State<QrScanPage> createState() => _QrScanPageState();
 }
 
-class _QrScanPageState extends State<QrScanPage> {
-  final MobileScannerController _cameraController = MobileScannerController(
-    returnImage: true, // Always return the image frame
-  );
+class _QrScanPageState extends State<QrScanPage> with WidgetsBindingObserver {
+  // For QR Scanning
+  final MobileScannerController _qrController = MobileScannerController();
+  
+  // For Photo Capture
+  CameraController? _photoController;
+  List<CameraDescription>? _cameras;
+  XFile? _capturedImageFile;
+
   late String _scanMode;
-  Uint8List? _capturedImage;
-  bool _isProcessing = false; // To prevent multiple detections at once
+  bool _isProcessing = false;
+  bool _isTorchOn = false;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _scanMode = widget.initialScanMode;
+    _initializeCamera();
+  }
+
+  Future<void> _initializeCamera() async {
+    _cameras = await availableCameras();
+    if (_cameras != null && _cameras!.isNotEmpty) {
+      _photoController = CameraController(_cameras![0], ResolutionPreset.high);
+      await _photoController!.initialize();
+      if (mounted) {
+        setState(() {}); // Update UI once camera is initialized
+      }
+    }
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    super.didChangeAppLifecycleState(state);
+    if (_photoController == null || !_photoController!.value.isInitialized) {
+      return;
+    }
+    if (state == AppLifecycleState.inactive) {
+      _photoController!.dispose();
+    } else if (state == AppLifecycleState.resumed) {
+      _initializeCamera();
+    }
   }
 
   @override
   void dispose() {
-    _cameraController.dispose();
+    WidgetsBinding.instance.removeObserver(this);
+    _qrController.dispose();
+    _photoController?.dispose();
     super.dispose();
   }
 
   void _retakePhoto() {
     setState(() {
-      _capturedImage = null;
+      _capturedImageFile = null;
       _isProcessing = false;
     });
-    // Ensure the camera is running
-    if (!_cameraController.isStarting) {
-      _cameraController.start();
-    }
   }
 
-  void _usePhoto() {
+  void _sendEvidence() {
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Photo saved. Reporting feature coming soon.')),
+      const SnackBar(content: Text('Evidence sent. Reporting feature coming soon.')),
     );
     _retakePhoto();
   }
@@ -57,60 +88,39 @@ class _QrScanPageState extends State<QrScanPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+      backgroundColor: Colors.black, // Camera previews look best on black
       appBar: AppBar(
         title: Text(_scanMode == 'scan' ? 'Scan QR Code' : 'Take Photo'),
         backgroundColor: AppThemes.darkBlue,
+        actions: [
+          IconButton(
+            onPressed: () {
+              if (_scanMode == 'scan') {
+                _qrController.toggleTorch();
+              } else {
+                _photoController?.setFlashMode(_isTorchOn ? FlashMode.off : FlashMode.torch);
+              }
+              setState(() {
+                _isTorchOn = !_isTorchOn;
+              });
+            },
+            icon: Icon(
+              _isTorchOn ? Icons.flashlight_on : Icons.flashlight_off,
+              color: _isTorchOn ? Colors.yellow : Colors.white,
+            ),
+          ),
+        ],
       ),
       body: SafeArea(
         child: Column(
           children: [
             Expanded(
-              child: Stack(
-                alignment: Alignment.center,
-                children: [
-                  if (_capturedImage == null)
-                    MobileScanner(
-                      controller: _cameraController,
-                      onDetect: (capture) {
-                        if (_isProcessing) return; // Don't process new events if one is already being handled
-
-                        // --- Logic for QR Scanning ---
-                        if (_scanMode == 'scan' && capture.barcodes.isNotEmpty) {
-                          setState(() { _isProcessing = true; });
-                          final barcode = capture.barcodes.first;
-                          _cameraController.stop();
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(content: Text('QR Scanned: ${barcode.rawValue}')),
-                          );
-                        }
-                        // --- Logic for Photo Capture ---
-                        // Note: The actual capture is triggered by the button now
-                      },
-                    )
-                  else
-                    Image.memory(
-                      _capturedImage!,
-                      fit: BoxFit.cover,
-                      width: double.infinity,
-                      height: double.infinity,
-                    ),
-                  if (_scanMode == 'scan' && _capturedImage == null)
-                    Container(
-                      width: MediaQuery.of(context).size.width * 0.7,
-                      height: MediaQuery.of(context).size.width * 0.7,
-                      decoration: BoxDecoration(
-                        border: Border.all(color: Colors.white, width: 2),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                    ),
-                ],
-              ),
+              child: _buildCameraView(),
             ),
             Container(
               padding: const EdgeInsets.all(20),
-              color: Colors.black.withOpacity(0.3),
-              child: _capturedImage != null
+              color: Colors.black.withOpacity(0.5),
+              child: _capturedImageFile != null
                   ? _buildPhotoControls()
                   : _buildCameraControls(),
             ),
@@ -118,6 +128,47 @@ class _QrScanPageState extends State<QrScanPage> {
         ),
       ),
     );
+  }
+  
+  Widget _buildCameraView() {
+    if (_capturedImageFile != null) {
+      return Image.file(File(_capturedImageFile!.path), fit: BoxFit.cover);
+    }
+    
+    if (_scanMode == 'scan') {
+      return Stack(
+        alignment: Alignment.center,
+        children: [
+          MobileScanner(
+            controller: _qrController,
+            onDetect: (capture) {
+              if (_isProcessing) return;
+              if (capture.barcodes.isNotEmpty) {
+                setState(() { _isProcessing = true; });
+                final barcode = capture.barcodes.first;
+                _qrController.stop();
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('QR Scanned: ${barcode.rawValue}')),
+                );
+              }
+            },
+          ),
+          Container(
+            width: MediaQuery.of(context).size.width * 0.7,
+            height: MediaQuery.of(context).size.width * 0.7,
+            decoration: BoxDecoration(
+              border: Border.all(color: Colors.white, width: 2),
+              borderRadius: BorderRadius.circular(12),
+            ),
+          ),
+        ],
+      );
+    } else { // Photo Mode
+      if (_photoController == null || !_photoController!.value.isInitialized) {
+        return const Center(child: CircularProgressIndicator());
+      }
+      return CameraPreview(_photoController!);
+    }
   }
 
   Widget _buildCameraControls() {
@@ -128,20 +179,19 @@ class _QrScanPageState extends State<QrScanPage> {
         if (_scanMode == 'photo')
           GestureDetector(
             onTap: () async {
-              // Now, we listen for a single image from the stream
-              final image = await _cameraController.barcodes.first.then((capture) => capture.image);
-              if (image != null) {
+              if (_photoController == null || !_photoController!.value.isInitialized) return;
+              try {
+                final XFile image = await _photoController!.takePicture();
                 setState(() {
-                  _capturedImage = image;
+                  _capturedImageFile = image;
                 });
+              } catch (e) {
+                print("Error taking picture: $e");
               }
             },
             child: Container(
               padding: const EdgeInsets.all(20),
-              decoration: const BoxDecoration(
-                shape: BoxShape.circle,
-                color: Colors.white,
-              ),
+              decoration: const BoxDecoration(shape: BoxShape.circle, color: Colors.white),
               child: const Icon(Icons.camera_alt, color: Colors.black, size: 30),
             ),
           ),
@@ -162,11 +212,11 @@ class _QrScanPageState extends State<QrScanPage> {
               backgroundColor: Colors.white, foregroundColor: Colors.black),
         ),
         ElevatedButton.icon(
-          onPressed: _usePhoto,
-          icon: const Icon(Icons.check),
-          label: const Text('Use Photo'),
+          onPressed: _sendEvidence,
+          icon: const Icon(Icons.send),
+          label: const Text('Send Evidence'),
           style: ElevatedButton.styleFrom(
-              backgroundColor: AppThemes.tealGreen,
+              backgroundColor: AppThemes.emergencyRed,
               foregroundColor: Colors.white),
         ),
       ],
@@ -179,10 +229,7 @@ class _QrScanPageState extends State<QrScanPage> {
       onPressed: () {
         setState(() {
           _scanMode = mode;
-          _isProcessing = false; // Reset processing flag when switching modes
-          if (_cameraController.isStopped) {
-            _cameraController.start();
-          }
+          _isProcessing = false;
         });
       },
       icon: Icon(
