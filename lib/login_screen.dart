@@ -1,84 +1,95 @@
 // lib/login_screen.dart
+import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 import 'package:eclub_app/otp_verification_screen.dart';
+import 'package:eclub_app/welcome_home_screen.dart';
+import 'package:eclub_app/main.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:eclub_app/app_themes.dart';
-import 'package:eclub_app/main.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
-
   @override
   State<LoginScreen> createState() => _LoginScreenState();
 }
 
 class _LoginScreenState extends State<LoginScreen> {
   final TextEditingController _phoneController = TextEditingController();
+  final TextEditingController _passwordController = TextEditingController();
+  bool _userExists = false;
   bool _isLoading = false;
   String? _phoneErrorText;
+
+  final String _serverUrl = 'http://192.168.137.1:3000';
 
   @override
   void dispose() {
     _phoneController.dispose();
+    _passwordController.dispose();
     super.dispose();
   }
 
-  Future<void> _savePhoneNumber(String phoneNumber) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('saved_phone_number', phoneNumber);
-  }
-
-  Future<void> _sendOtp() async {
-    setState(() => _isLoading = true);
-    final String phoneNumber = '+91${_phoneController.text.trim()}';
-    await FirebaseAuth.instance.verifyPhoneNumber(
-      phoneNumber: phoneNumber,
-      verificationCompleted: (PhoneAuthCredential credential) async {
-        await FirebaseAuth.instance.signInWithCredential(credential);
-        if (mounted) setState(() => _isLoading = false);
-      },
-      verificationFailed: (FirebaseAuthException e) {
-        if (mounted) {
-          setState(() => _isLoading = false);
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text("Failed to send OTP: ${e.message}")),
-          );
-        }
-      },
-      codeSent: (String verificationId, int? resendToken) {
-        if (mounted) {
-          setState(() => _isLoading = false);
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (context) => OtpVerificationScreen(
-                phoneNumber: _phoneController.text.trim(),
-                verificationId: verificationId,
-                resendToken: resendToken,
-              ),
-            ),
-          );
-        }
-      },
-      codeAutoRetrievalTimeout: (String verificationId) {
-        if (mounted) setState(() => _isLoading = false);
-      },
-    );
-  }
-
-  void _validateAndSendOtp(bool isHindi) {
-    if (_phoneController.text.trim().length == 10) {
-      setState(() => _phoneErrorText = null);
-      _savePhoneNumber(_phoneController.text.trim());
-      _sendOtp();
-    } else {
-      setState(() {
-        _phoneErrorText = isHindi
-            ? 'कृपया एक मान्य 10-अंकीय फ़ोन नंबर दर्ज करें'
-            : 'Enter valid 10-digit number';
-      });
+  Future<void> _checkUserExists() async {
+    if (_phoneController.text.trim().length != 10) {
+      if (mounted) setState(() => _userExists = false);
+      return;
     }
+    setState(() => _isLoading = true);
+    try {
+      final response = await http.get(
+        Uri.parse('$_serverUrl/user/exists/${_phoneController.text.trim()}'),
+      );
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (mounted) setState(() => _userExists = data['exists']);
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Cannot connect to server.")));
+      }
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _handleProceed() async {
+    setState(() => _isLoading = true);
+    final isHindi = languageNotifier.isHindi;
+
+    if (_userExists) {
+      try {
+        final response = await http.post(
+          Uri.parse('$_serverUrl/user/login'),
+          headers: {'Content-Type': 'application/json'},
+          body: json.encode({
+            'phoneNumber': _phoneController.text.trim(),
+            'password': _passwordController.text.trim(),
+          }),
+        );
+        if (response.statusCode == 200 && mounted) {
+          final data = jsonDecode(response.body);
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.setString('user_phone', data['user']['phoneNumber']);
+          await prefs.setString('user_name', data['user']['name']);
+          Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => const WelcomeHomeScreen()));
+        } else if (mounted) {
+          final data = jsonDecode(response.body);
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(data['message'] ?? 'Invalid credentials')));
+        }
+      } catch (e) {
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Login failed. Check server connection.")));
+      }
+    } else {
+      if (_phoneController.text.trim().length == 10) {
+         Navigator.push(context, MaterialPageRoute(builder: (context) => OtpVerificationScreen(phoneNumber: _phoneController.text.trim())));
+      } else {
+        setState(() {
+          _phoneErrorText = isHindi ? 'कृपया एक मान्य 10-अंकीय फ़ोन नंबर दर्ज करें' : 'Enter valid 10-digit number';
+        });
+      }
+    }
+    if (mounted) setState(() => _isLoading = false);
   }
 
   @override
@@ -91,9 +102,9 @@ class _LoginScreenState extends State<LoginScreen> {
         final screenWidth = MediaQuery.of(context).size.width;
 
         return Scaffold(
-          backgroundColor: Theme.of(context).scaffoldBackgroundColor,
           body: SafeArea(
             child: SingleChildScrollView(
+              padding: const EdgeInsets.symmetric(vertical: 20),
               child: Column(
                 children: [
                   Container(
@@ -107,10 +118,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                     ),
                     child: Center(
-                      child: Text(
-                        'ASTRA',
-                        style: Theme.of(context).textTheme.headlineLarge?.copyWith(fontSize: 36, color: Colors.white),
-                      ),
+                      child: Text('ASTRA', style: Theme.of(context).textTheme.headlineLarge?.copyWith(fontSize: 36, color: Colors.white)),
                     ),
                   ),
                   SizedBox(height: screenHeight * 0.03),
@@ -138,8 +146,21 @@ class _LoginScreenState extends State<LoginScreen> {
                         errorText: _phoneErrorText,
                         border: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(8))),
                       ),
+                      onChanged: (value) => _checkUserExists(),
                     ),
                   ),
+                  if (_userExists)
+                    Padding(
+                      padding: EdgeInsets.symmetric(horizontal: screenWidth * 0.1, vertical: 16),
+                      child: TextField(
+                        controller: _passwordController,
+                        obscureText: true,
+                        decoration: InputDecoration(
+                          labelText: isHindi ? 'पासवर्ड' : 'Password',
+                          border: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(8))),
+                        ),
+                      ),
+                    ),
                   SizedBox(height: screenHeight * 0.04),
                   Padding(
                     padding: EdgeInsets.symmetric(horizontal: screenWidth * 0.1),
@@ -147,7 +168,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       width: double.infinity,
                       height: 50,
                       child: ElevatedButton(
-                        onPressed: _isLoading ? null : () => _validateAndSendOtp(isHindi),
+                        onPressed: _isLoading ? null : _handleProceed,
                         style: ElevatedButton.styleFrom(
                           backgroundColor: AppThemes.tealGreen,
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(25)),
@@ -155,7 +176,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         child: _isLoading
                             ? const CircularProgressIndicator(color: Colors.white)
                             : Text(
-                                isHindi ? 'ओटीपी भेजें' : 'SEND OTP',
+                                _userExists ? (isHindi ? 'लॉगिन करें' : 'LOGIN') : (isHindi ? 'ओटीपी भेजें' : 'SEND OTP'),
                                 style: TextStyle(
                                     fontFamily: isHindi ? 'Mukta' : 'Inter',
                                     color: Colors.white,
@@ -177,7 +198,6 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                     ),
                   ),
-                  SizedBox(height: screenHeight * 0.03),
                 ],
               ),
             ),

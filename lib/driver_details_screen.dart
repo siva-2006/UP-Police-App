@@ -1,5 +1,6 @@
 // lib/driver_details_screen.dart
 import 'package:flutter/material.dart';
+import 'package:eclub_app/app_themes.dart';
 
 class DriverDetailsScreen extends StatelessWidget {
   final Map<String, String> driverDetails;
@@ -35,7 +36,11 @@ class DriverDetailsScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Driver Details')),
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+      appBar: AppBar(
+        title: const Text('Driver Details'),
+        backgroundColor: AppThemes.darkBlue,
+      ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(24.0),
         child: Column(

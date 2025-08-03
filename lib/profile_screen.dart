@@ -1,13 +1,11 @@
 // lib/profile_screen.dart
-import 'dart:io';
+import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
 import 'package:eclub_app/app_themes.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_storage/firebase_storage.dart';
-import 'package:image_picker/image_picker.dart';
-import 'package:image_cropper/image_cropper.dart';
+import 'package:eclub_app/main.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -25,8 +23,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
   
   bool _isLoading = true;
   bool _isEditing = false;
-  File? _imageFile;
-  String? _profileImageUrl;
+  String? _userPhone;
+  
+  final String _serverUrl = 'http://192.168.137.1:3000';
 
   @override
   void initState() {
@@ -46,69 +45,25 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Future<void> _loadProfileDetails() async {
     setState(() { _isLoading = true; });
     try {
-      final user = FirebaseAuth.instance.currentUser;
-      if (user != null) {
-        final userDoc = await FirebaseFirestore.instance.collection('users').doc(user.uid).get();
-        if (mounted && userDoc.exists) {
-          final data = userDoc.data()!;
-          _nameController.text = data['name'] ?? '';
-          _mobileNoController.text = data['phoneNumber'] ?? '';
-          _aadhaarNoController.text = data['aadhaarNumber'] ?? '';
-          _dobController.text = data['dateOfBirth'] ?? '';
-          _profileImageUrl = data['profileImageUrl'];
-        }
+      final prefs = await SharedPreferences.getInstance();
+      _userPhone = prefs.getString('user_phone');
+      if (_userPhone == null) {
+        if (mounted) setState(() => _isLoading = false);
+        return;
+      }
+
+      final response = await http.get(Uri.parse('$_serverUrl/user/profile/$_userPhone'));
+      if (mounted && response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        _nameController.text = data['name'] ?? '';
+        _mobileNoController.text = data['phoneNumber'] ?? '';
+        _aadhaarNoController.text = data['aadhaarNumber'] ?? '';
+        _dobController.text = data['dateOfBirth'] ?? '';
       }
     } catch (e) {
-      // Handle error
+      print("Error loading profile: $e");
     } finally {
       if (mounted) setState(() { _isLoading = false; });
-    }
-  }
-
-  Future<void> _pickAndCropImage() async {
-    final pickedFile = await ImagePicker().pickImage(source: ImageSource.gallery);
-    if (pickedFile == null) return;
-
-    final croppedFile = await ImageCropper().cropImage(
-      sourcePath: pickedFile.path,
-      uiSettings: [
-        AndroidUiSettings(
-          toolbarTitle: 'Crop Image',
-          toolbarColor: AppThemes.darkBlue,
-          toolbarWidgetColor: Colors.white,
-          lockAspectRatio: true,
-          initAspectRatio: CropAspectRatioPreset.square,
-          hideBottomControls: true,
-          statusBarColor: AppThemes.darkBlue, // ← fixes content overlap with status bar
-          showCropGrid: true,
-          cropFrameStrokeWidth: 2,
-          cropGridStrokeWidth: 1,
-        ),
-        IOSUiSettings(
-          title: 'Crop Image',
-          aspectRatioLockEnabled: true,
-        ),
-      ],
-    );
-
-    if (croppedFile != null) {
-      setState(() {
-        _imageFile = File(croppedFile.path);
-      });
-    }
-  }
-
-
-
-
-  Future<String?> _uploadProfilePicture(String userId) async {
-    if (_imageFile == null) return null;
-    try {
-      final ref = FirebaseStorage.instance.ref().child('profile_pictures').child('$userId.jpg');
-      await ref.putFile(_imageFile!);
-      return await ref.getDownloadURL();
-    } catch (e) {
-      return null;
     }
   }
 
@@ -116,56 +71,47 @@ class _ProfileScreenState extends State<ProfileScreen> {
     if (_formKey.currentState!.validate()) {
       setState(() { _isLoading = true; });
       try {
-        final user = FirebaseAuth.instance.currentUser;
-        if (user != null) {
-          String? newImageUrl = await _uploadProfilePicture(user.uid);
-          await FirebaseFirestore.instance.collection('users').doc(user.uid).update({
+        await http.put(
+          Uri.parse('$_serverUrl/user/profile/$_userPhone'),
+          headers: {'Content-Type': 'application/json'},
+          body: json.encode({
             'name': _nameController.text.trim(),
             'aadhaarNumber': _aadhaarNoController.text.trim(),
             'dateOfBirth': _dobController.text.trim(),
-            if (newImageUrl != null) 'profileImageUrl': newImageUrl,
-          });
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Profile updated!')));
-          }
-          _profileImageUrl = newImageUrl ?? _profileImageUrl;
-          _imageFile = null;
+          }),
+        );
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Profile updated!')));
         }
       } catch (e) {
-        // handle error
+        print("Error saving profile: $e");
       } finally {
-        if (mounted) {
-          setState(() {
-            _isLoading = false;
-            _isEditing = false;
-          });
-        }
+        if (mounted) setState(() { _isLoading = false; _isEditing = false; });
       }
     }
   }
-
+  
   void _discardChanges() {
     setState(() {
       _isEditing = false;
-      _imageFile = null;
       _loadProfileDetails();
     });
   }
 
-  Future<void> _showDiscardConfirmationDialog() async {
-    showDialog<void>(
+  Future<void> _showDiscardConfirmationDialog(bool isHindi) async {
+    return showDialog<void>(
       context: context,
       builder: (BuildContext context) => AlertDialog(
-        title: const Text('Discard Changes?'),
-        content: const Text('Are you sure you want to discard your changes?'),
+        title: Text(isHindi ? 'बदलाव हटाएं?' : 'Discard Changes?'),
+        content: Text(isHindi ? 'क्या आप वाकई अपने बदलावों को हटाना चाहते हैं?' : 'Are you sure you want to discard your changes?'),
         actions: <Widget>[
-          TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Cancel')),
+          TextButton(onPressed: () => Navigator.of(context).pop(), child: Text(isHindi ? 'रद्द करें' : 'Cancel')),
           TextButton(
               onPressed: () {
                 Navigator.of(context).pop();
                 _discardChanges();
               },
-              child: const Text('Discard')),
+              child: Text(isHindi ? 'हटाएं' : 'Discard')),
         ],
       ),
     );
@@ -179,107 +125,92 @@ class _ProfileScreenState extends State<ProfileScreen> {
       lastDate: DateTime.now(),
     );
     if (picked != null) {
-      setState(() {
-        _dobController.text = DateFormat('dd/MM/yyyy').format(picked);
-      });
+      _dobController.text = DateFormat('dd/MM/yyyy').format(picked);
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Profile')),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : SingleChildScrollView(
-              padding: const EdgeInsets.all(24.0),
-              child: Form(
-                key: _formKey,
-                child: Column(
-                  children: [
-                    _buildProfilePicture(),
-                    const SizedBox(height: 40),
-                    _buildTextFormField(
-                      controller: _nameController,
-                      label: 'Name',
-                      enabled: _isEditing,
-                      validator: (v) => v!.isEmpty ? 'Please enter your name' : null,
+    return ListenableBuilder(
+      listenable: languageNotifier,
+      builder: (context, child) {
+        final isHindi = languageNotifier.isHindi;
+        return Scaffold(
+          appBar: AppBar(title: Text(isHindi ? 'प्रोफ़ाइल' : 'Profile')),
+          body: _isLoading
+              ? const Center(child: CircularProgressIndicator())
+              : SingleChildScrollView(
+                  padding: const EdgeInsets.all(24.0),
+                  child: Form(
+                    key: _formKey,
+                    child: Column(
+                      children: [
+                        const CircleAvatar(
+                          radius: 60,
+                          backgroundColor: Colors.grey,
+                          child: Icon(Icons.person, size: 80, color: Colors.white),
+                        ),
+                        const SizedBox(height: 40),
+                        _buildTextFormField(
+                          context: context,
+                          controller: _nameController,
+                          label: isHindi ? 'नाम' : 'Name',
+                          enabled: _isEditing,
+                          validator: (v) => v!.isEmpty ? (isHindi ? 'कृपया अपना नाम दर्ज करें' : 'Please enter your name') : null,
+                        ),
+                        const SizedBox(height: 24),
+                        _buildTextFormField(
+                          context: context,
+                          controller: _mobileNoController,
+                          label: isHindi ? 'मोबाइल नंबर' : 'Mobile Number',
+                          enabled: false,
+                        ),
+                        const SizedBox(height: 24),
+                        _buildTextFormField(
+                          context: context,
+                          controller: _aadhaarNoController,
+                          label: isHindi ? 'आधार नंबर' : 'Aadhaar Number',
+                          keyboardType: TextInputType.number,
+                          maxLength: 12,
+                          enabled: _isEditing,
+                           validator: (v) => v!.isNotEmpty && v.length != 12 ? (isHindi ? 'मान्य 12-अंकीय नंबर दर्ज करें' : 'Enter a valid 12-digit number') : null,
+                        ),
+                        const SizedBox(height: 24),
+                        _buildTextFormField(
+                          context: context,
+                          controller: _dobController,
+                          label: isHindi ? 'जन्म तिथि' : 'Date of Birth',
+                          readOnly: true,
+                          enabled: _isEditing,
+                          onTap: _isEditing ? () => _selectDate(context) : null,
+                          suffixIcon: const Icon(Icons.calendar_today),
+                        ),
+                        const SizedBox(height: 50),
+                        _buildActionButtons(isHindi),
+                      ],
                     ),
-                    const SizedBox(height: 24),
-                    _buildTextFormField(
-                      controller: _mobileNoController,
-                      label: 'Mobile Number',
-                      enabled: false,
-                    ),
-                    const SizedBox(height: 24),
-                    _buildTextFormField(
-                      controller: _aadhaarNoController,
-                      label: 'Aadhaar Number',
-                      keyboardType: TextInputType.number,
-                      maxLength: 12,
-                      enabled: _isEditing,
-                      validator: (v) => v!.isNotEmpty && v.length != 12 ? 'Enter a valid 12-digit number' : null,
-                    ),
-                    const SizedBox(height: 24),
-                    _buildTextFormField(
-                      controller: _dobController,
-                      label: 'Date of Birth',
-                      readOnly: true,
-                      enabled: _isEditing,
-                      onTap: _isEditing ? () => _selectDate(context) : null,
-                      suffixIcon: const Icon(Icons.calendar_today),
-                    ),
-                    const SizedBox(height: 50),
-                    _buildActionButtons(),
-                  ],
+                  ),
                 ),
-              ),
-            ),
+        );
+      },
     );
   }
 
-  Widget _buildProfilePicture() {
-    final double radius = MediaQuery.of(context).size.width * 0.15;
-    return Stack(
-      children: [
-        CircleAvatar(
-          radius: radius,
-          backgroundColor: Theme.of(context).colorScheme.surface,
-          backgroundImage: _imageFile != null ? FileImage(_imageFile!) : (_profileImageUrl != null ? NetworkImage(_profileImageUrl!) : null) as ImageProvider?,
-          child: _imageFile == null && _profileImageUrl == null ? Icon(Icons.person, size: radius, color: Theme.of(context).textTheme.bodyMedium?.color) : null,
-        ),
-        if (_isEditing)
-          Positioned(
-            bottom: 0,
-            right: 0,
-            child: GestureDetector(
-              onTap: _pickAndCropImage,
-              child: const CircleAvatar(
-                radius: 20,
-                backgroundColor: AppThemes.accentPink,
-                child: Icon(Icons.edit, color: Colors.white, size: 22),
-              ),
-            ),
-          ),
-      ],
-    );
-  }
-
-  Widget _buildActionButtons() {
+  Widget _buildActionButtons(bool isHindi) {
     if (_isEditing) {
       return Row(
         children: [
           Expanded(
             child: OutlinedButton(
-              onPressed: _showDiscardConfirmationDialog,
-              child: const Text('Discard'),
+              onPressed: () => _showDiscardConfirmationDialog(isHindi),
+              child: Text(isHindi ? 'हटाएं' : 'Discard'),
             ),
           ),
           const SizedBox(width: 16),
           Expanded(
             child: ElevatedButton(
               onPressed: _saveProfileDetails,
-              child: const Text('Save'),
+              child: Text(isHindi ? 'सहेजें' : 'Save'),
             ),
           ),
         ],
@@ -290,13 +221,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
         height: 50,
         child: ElevatedButton(
           onPressed: () => setState(() { _isEditing = true; }),
-          child: const Text('Edit Profile'),
+          child: Text(isHindi ? 'प्रोफ़ाइल संपादित करें' : 'Edit Profile'),
         ),
       );
     }
   }
 
   Widget _buildTextFormField({
+    required BuildContext context,
     required TextEditingController controller,
     required String label,
     bool enabled = true,

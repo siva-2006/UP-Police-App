@@ -1,13 +1,13 @@
 // lib/qr_scan_page.dart
 import 'dart:io';
+import 'dart:convert';
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:eclub_app/app_themes.dart';
 import 'package:eclub_app/driver_details_screen.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'dart:convert';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class QrScanPage extends StatefulWidget {
   const QrScanPage({super.key});
@@ -17,16 +17,16 @@ class QrScanPage extends StatefulWidget {
 }
 
 class _QrScanPageState extends State<QrScanPage> with WidgetsBindingObserver {
-  // Controllers for different modes
   final MobileScannerController _qrController = MobileScannerController();
   CameraController? _photoController;
   List<CameraDescription>? _cameras;
   XFile? _capturedImageFile;
 
-  // State variables
-  String _scanMode = 'scan'; // Default mode
+  String _scanMode = 'scan';
   bool _isProcessing = false;
   bool _isTorchOn = false;
+
+  final String _serverUrl = 'http://192.168.137.1:3000';
 
   @override
   void initState() {
@@ -69,6 +69,7 @@ class _QrScanPageState extends State<QrScanPage> with WidgetsBindingObserver {
   }
 
   Future<void> _handleScannedCode(String rawValue) async {
+    if (_isProcessing) return;
     setState(() { _isProcessing = true; });
     _qrController.stop();
 
@@ -79,7 +80,13 @@ class _QrScanPageState extends State<QrScanPage> with WidgetsBindingObserver {
         'vehicleNumber': data['vehicleNumber'] as String? ?? 'N/A',
         'phone': data['phone'] as String? ?? 'N/A',
       };
+      
+      if (driverDetails['name'] == 'N/A') {
+        throw const FormatException("Missing 'name' in QR code.");
+      }
+
       await _addRideToHistory(driverDetails);
+      
       if (mounted) {
         Navigator.pushReplacement(
           context,
@@ -91,21 +98,28 @@ class _QrScanPageState extends State<QrScanPage> with WidgetsBindingObserver {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: Invalid QR code format.')),
+          SnackBar(content: Text('Invalid QR Code. Please try again.')),
         );
-        _qrController.start();
-        setState(() { _isProcessing = false; });
+        Future.delayed(const Duration(seconds: 2), () {
+          if(mounted) {
+            _qrController.start();
+            setState(() { _isProcessing = false; });
+          }
+        });
       }
     }
   }
   
   Future<void> _addRideToHistory(Map<String, String> driverDetails) async {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return;
-    await FirebaseFirestore.instance.collection('users').doc(user.uid).collection('rides').add({
-      ...driverDetails,
-      'timestamp': FieldValue.serverTimestamp(),
-    });
+    final prefs = await SharedPreferences.getInstance();
+    final userPhone = prefs.getString('user_phone');
+    if (userPhone == null) return;
+    
+    await http.post(
+      Uri.parse('$_serverUrl/user/$userPhone/rides'),
+      headers: {'Content-Type': 'application/json'},
+      body: json.encode(driverDetails),
+    );
   }
 
   void _retakePhoto() {

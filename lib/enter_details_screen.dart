@@ -1,19 +1,16 @@
 // lib/enter_details_screen.dart
+import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
+import 'package:http/http.dart' as http;
 import 'package:eclub_app/welcome_home_screen.dart';
 import 'package:eclub_app/app_themes.dart';
-import 'package:eclub_app/main.dart'; // Import main to access languageNotifier
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:eclub_app/main.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:intl/intl.dart';
 
 class EnterDetailsScreen extends StatefulWidget {
   final String phoneNumber;
-
-  const EnterDetailsScreen({
-    super.key,
-    required this.phoneNumber,
-  });
+  const EnterDetailsScreen({super.key, required this.phoneNumber});
 
   @override
   State<EnterDetailsScreen> createState() => _EnterDetailsScreenState();
@@ -22,49 +19,59 @@ class EnterDetailsScreen extends StatefulWidget {
 class _EnterDetailsScreenState extends State<EnterDetailsScreen> {
   final _formKey = GlobalKey<FormState>();
   final TextEditingController _nameController = TextEditingController();
-  final TextEditingController _mobileNoController = TextEditingController();
-  final TextEditingController _aadhaarNoController = TextEditingController();
+  final TextEditingController _passwordController = TextEditingController();
+  final TextEditingController _aadhaarController = TextEditingController();
   final TextEditingController _dobController = TextEditingController();
   bool _isLoading = false;
 
-  @override
-  void initState() {
-    super.initState();
-    _mobileNoController.text = widget.phoneNumber;
-  }
+  final String _serverUrl = 'http://192.168.137.1:3000';
 
   @override
   void dispose() {
     _nameController.dispose();
-    _mobileNoController.dispose();
-    _aadhaarNoController.dispose();
+    _passwordController.dispose();
+    _aadhaarController.dispose();
     _dobController.dispose();
     super.dispose();
   }
 
-  Future<void> _saveUserDetailsToFirestore() async {
+  Future<void> _registerUser() async {
     if (_formKey.currentState!.validate()) {
       setState(() { _isLoading = true; });
       try {
-        final user = FirebaseAuth.instance.currentUser;
-        if (user != null) {
-          await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
-            'name': _nameController.text.trim(),
+        final response = await http.post(
+          Uri.parse('$_serverUrl/user/register'),
+          headers: {'Content-Type': 'application/json'},
+          body: json.encode({
             'phoneNumber': widget.phoneNumber,
-            'aadhaarNumber': _aadhaarNoController.text.trim(),
+            'password': _passwordController.text.trim(),
+            'name': _nameController.text.trim(),
+            'aadhaarNumber': _aadhaarController.text.trim(),
             'dateOfBirth': _dobController.text.trim(),
-            'createdAt': FieldValue.serverTimestamp(),
-          });
-          if (mounted) {
-            Navigator.pushAndRemoveUntil(context, MaterialPageRoute(builder: (context) => const WelcomeHomeScreen()), (route) => false);
-          }
+          }),
+        );
+
+        if (response.statusCode == 201 && mounted) {
+          final data = jsonDecode(response.body);
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.setString('user_phone', data['user']['phoneNumber']);
+          await prefs.setString('user_name', data['user']['name']);
+          Navigator.pushAndRemoveUntil(
+            context,
+            MaterialPageRoute(builder: (context) => const WelcomeHomeScreen()),
+            (route) => false,
+          );
+        } else if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Registration failed: ${response.body}')));
         }
       } catch (e) {
-        // Handle error
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('An error occurred: ${e.toString()}')));
+      } finally {
+        if (mounted) setState(() { _isLoading = false; });
       }
     }
   }
-
+  
   Future<void> _selectDate(BuildContext context) async {
     final DateTime? picked = await showDatePicker(
       context: context,
@@ -119,29 +126,29 @@ class _EnterDetailsScreenState extends State<EnterDetailsScreen> {
                       validator: (v) => v!.isEmpty ? (isHindi ? 'कृपया अपना नाम दर्ज करें' : 'Please enter your name') : null,
                     ),
                     const SizedBox(height: 24),
-                    _buildTextFormField(
+                     _buildTextFormField(
                       context: context,
-                      controller: _mobileNoController,
-                      label: isHindi ? 'मोबाइल नंबर' : 'Mobile Number',
-                      enabled: false,
+                      controller: _passwordController,
+                      label: isHindi ? 'पासवर्ड सेट करें' : 'Set Password',
+                      isPassword: true,
+                      validator: (v) => v!.length < 6 ? (isHindi ? 'पासवर्ड न्यूनतम 6 अक्षर का होना चाहिए' : 'Password must be at least 6 characters') : null,
                     ),
                     const SizedBox(height: 24),
                     _buildTextFormField(
                       context: context,
-                      controller: _aadhaarNoController,
+                      controller: _aadhaarController,
                       label: isHindi ? 'आधार नंबर' : 'Aadhaar Number',
                       keyboardType: TextInputType.number,
-                      maxLength: 12,
-                      validator: (v) => v!.isNotEmpty && v.length != 12 ? (isHindi ? 'मान्य 12-अंकीय नंबर दर्ज करें' : 'Enter a valid 12-digit number') : null,
+                      maxLength: 12
                     ),
-                    const SizedBox(height: 24),
+                     const SizedBox(height: 24),
                     _buildTextFormField(
                       context: context,
                       controller: _dobController,
                       label: isHindi ? 'जन्म तिथि' : 'Date of Birth',
                       readOnly: true,
                       onTap: () => _selectDate(context),
-                      suffixIcon: const Icon(Icons.calendar_today),
+                      suffixIcon: const Icon(Icons.calendar_today)
                     ),
                     const SizedBox(height: 40),
                     Padding(
@@ -150,15 +157,14 @@ class _EnterDetailsScreenState extends State<EnterDetailsScreen> {
                         width: double.infinity,
                         height: 50,
                         child: ElevatedButton(
-                          onPressed: _isLoading ? null : _saveUserDetailsToFirestore,
-                          style: ElevatedButton.styleFrom(
+                          onPressed: _isLoading ? null : _registerUser,
+                           style: ElevatedButton.styleFrom(
                             backgroundColor: AppThemes.tealGreen,
                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(25)),
                           ),
-                          child: _isLoading ? const CircularProgressIndicator(color: Colors.white) : Text(
-                            isHindi ? 'विवरण जमा करें' : 'SUBMIT DETAILS',
-                            style: TextStyle(fontFamily: isHindi ? 'Mukta' : 'Inter', color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
-                          ),
+                          child: _isLoading
+                              ? const CircularProgressIndicator(color: Colors.white)
+                              : Text(isHindi ? 'रजिस्टर करें' : 'REGISTER', style: TextStyle(fontFamily: isHindi ? 'Mukta' : 'Inter', color: Colors.white)),
                         ),
                       ),
                     ),
@@ -183,6 +189,7 @@ class _EnterDetailsScreenState extends State<EnterDetailsScreen> {
     VoidCallback? onTap,
     Widget? suffixIcon,
     String? Function(String?)? validator,
+    bool isPassword = false,
   }) {
     return Padding(
       padding: EdgeInsets.symmetric(horizontal: MediaQuery.of(context).size.width * 0.1),
@@ -194,6 +201,7 @@ class _EnterDetailsScreenState extends State<EnterDetailsScreen> {
         keyboardType: keyboardType,
         onTap: onTap,
         validator: validator,
+        obscureText: isPassword,
         decoration: InputDecoration(
           labelText: label,
           counterText: "",
