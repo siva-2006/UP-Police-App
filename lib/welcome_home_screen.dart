@@ -1,46 +1,49 @@
 // lib/welcome_home_screen.dart
 import 'package:flutter/material.dart';
-import 'package:eclub_app/app_themes.dart'; //
-import 'package:eclub_app/home_dashboard_screen.dart'; //
+import 'package:eclub_app/app_themes.dart';
+import 'package:eclub_app/home_dashboard_screen.dart';
 import 'package:eclub_app/main.dart';
 import 'package:eclub_app/qr_scan_page.dart';
+import 'package:eclub_app/scream_detection_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:eclub_app/location_service.dart';
 
 class WelcomeHomeScreen extends StatefulWidget {
-  const WelcomeHomeScreen({super.key}); //
+  const WelcomeHomeScreen({super.key});
 
   @override
   State<WelcomeHomeScreen> createState() => _WelcomeHomeScreenState();
 }
 
 class _WelcomeHomeScreenState extends State<WelcomeHomeScreen> {
-  String _userName = "User"; //
-  bool _isLoading = true; //
-  bool _isSafeModeActive = false; //
+  String _userName = "User";
+  bool _isLoading = true;
+  bool _isSafeModeActive = false;
+  late final ScreamDetectionService _screamService;
+  late final LocationService _locationService;
 
-  // --- FIX APPLIED HERE ---
   @override
   void initState() {
     super.initState();
-    // Add a listener that will call setState() to rebuild the widget
+    _screamService = ScreamDetectionService();
+    _locationService = LocationService();
     languageNotifier.addListener(_onLanguageChanged);
     _loadUserName();
   }
 
   @override
   void dispose() {
-    // Remove the listener to prevent memory leaks
     languageNotifier.removeListener(_onLanguageChanged);
+    _screamService.dispose();
     super.dispose();
   }
 
   void _onLanguageChanged() {
-    setState(() {
-      // This empty setState call is enough to trigger a rebuild
-    });
+    if (mounted) {
+      setState(() {});
+    }
   }
-  // --- END OF FIX ---
 
   Future<void> _loadUserName() async {
     final prefs = await SharedPreferences.getInstance();
@@ -68,7 +71,9 @@ class _WelcomeHomeScreenState extends State<WelcomeHomeScreen> {
     }
   }
 
-  Future<void> _sendSms(String phoneNumber, String message) async {
+  Future<void> _sendSmsAndTrack(String phoneNumber, String message) async {
+    _locationService.startTracking();
+    
     final Uri smsLaunchUri = Uri(
       scheme: 'sms',
       path: phoneNumber,
@@ -83,78 +88,93 @@ class _WelcomeHomeScreenState extends State<WelcomeHomeScreen> {
     }
   }
 
+  void _toggleSafeMode(bool isActive) {
+    setState(() => _isSafeModeActive = isActive);
+    if (isActive) {
+      _screamService.start();
+    } else {
+      _screamService.stop();
+      _locationService.stopTracking();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    final isHindi = languageNotifier.isHindi;
-    final screenWidth = MediaQuery.of(context).size.width;
-    final double welcomeFontSize = screenWidth * 0.055;
-    final double bottomIconSize = screenWidth * 0.1;
+    return ListenableBuilder(
+      listenable: languageNotifier,
+      builder: (context, child) {
+        final isHindi = languageNotifier.isHindi;
+        final screenWidth = MediaQuery.of(context).size.width;
+        final double welcomeFontSize = screenWidth * 0.055;
+        final double bottomIconSize = screenWidth * 0.1;
 
-    return Scaffold(
-      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
-      body: SafeArea(
-        child: Column(
-          children: [
-            Hero(
-              tag: 'astra_header',
-              child: Container(
-                height: 120,
-                width: screenWidth,
-                decoration: const BoxDecoration(
-                  color: AppThemes.darkBlue, //
-                  borderRadius: BorderRadius.only(
-                    bottomLeft: Radius.circular(50),
-                    bottomRight: Radius.circular(50),
-                  ),
-                ),
-                child: Center(
-                  child: Text('ASTRA', style: Theme.of(context).textTheme.headlineLarge?.copyWith(color: Colors.white, fontSize: 36)),
-                ),
-              ),
-            ),
-            const SizedBox(height: 50.0),
-            if (_isLoading)
-              const CircularProgressIndicator()
-            else
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 20.0),
-                child: Text(
-                  '${_getGreeting(isHindi)}, ${_userName.toUpperCase()}',
-                  textAlign: TextAlign.center,
-                  style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                        fontFamily: isHindi ? 'Mukta' : 'Inter',
-                        color: Theme.of(context).textTheme.bodyLarge?.color,
-                        fontSize: welcomeFontSize,
-                        fontWeight: FontWeight.bold,
+        return Scaffold(
+          backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+          body: SafeArea(
+            child: Column(
+              children: [
+                Hero(
+                  tag: 'astra_header',
+                  child: Container(
+                    height: 120,
+                    width: screenWidth,
+                    decoration: const BoxDecoration(
+                      color: AppThemes.darkBlue,
+                      borderRadius: BorderRadius.only(
+                        bottomLeft: Radius.circular(50),
+                        bottomRight: Radius.circular(50),
                       ),
+                    ),
+                    child: Center(
+                      child: Text('ASTRA', style: Theme.of(context).textTheme.headlineLarge?.copyWith(color: Colors.white, fontSize: 36)),
+                    ),
+                  ),
                 ),
-              ),
-            const Spacer(),
-            _buildCentralButtonArea(isHindi),
-            const Spacer(),
-            Padding(
-              padding: EdgeInsets.symmetric(horizontal: screenWidth * 0.1, vertical: 20),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceAround,
-                children: [
-                  IconButton(
-                    icon: Icon(Icons.qr_code_scanner, size: bottomIconSize),
-                    onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const QrScanPage())), //
+                const SizedBox(height: 50.0),
+                if (_isLoading)
+                  const CircularProgressIndicator()
+                else
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 20.0),
+                    child: Text(
+                      '${_getGreeting(isHindi)}, ${_userName.toUpperCase()}',
+                      textAlign: TextAlign.center,
+                      style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                            fontFamily: isHindi ? 'Mukta' : 'Inter',
+                            color: Theme.of(context).textTheme.bodyLarge?.color,
+                            fontSize: welcomeFontSize,
+                            fontWeight: FontWeight.bold,
+                          ),
+                    ),
                   ),
-                  IconButton(
-                    icon: Icon(Icons.camera_alt, size: bottomIconSize),
-                    onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const QrScanPage())), //
+                const Spacer(),
+                _buildCentralButtonArea(isHindi),
+                const Spacer(),
+                Padding(
+                  padding: EdgeInsets.symmetric(horizontal: screenWidth * 0.1, vertical: 20),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceAround,
+                    children: [
+                      IconButton(
+                        icon: Icon(Icons.qr_code_scanner, size: bottomIconSize),
+                        onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const QrScanPage())),
+                      ),
+                      IconButton(
+                        icon: Icon(Icons.camera_alt, size: bottomIconSize),
+                        onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const QrScanPage())),
+                      ),
+                      IconButton(
+                        icon: Icon(Icons.menu, size: bottomIconSize),
+                        onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const HomeDashboardScreen())),
+                      ),
+                    ],
                   ),
-                  IconButton(
-                    icon: Icon(Icons.menu, size: bottomIconSize),
-                    onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const HomeDashboardScreen())), //
-                  ),
-                ],
-              ),
+                ),
+              ],
             ),
-          ],
-        ),
-      ),
+          ),
+        );
+      },
     );
   }
 
@@ -168,9 +188,9 @@ class _WelcomeHomeScreenState extends State<WelcomeHomeScreen> {
         GestureDetector(
           onTap: () {
             if (!_isSafeModeActive) {
-              setState(() => _isSafeModeActive = true);
+              _toggleSafeMode(true);
             } else {
-              _sendSms('112', 'Emergency! I am in danger and need help.');
+              _sendSmsAndTrack('112', 'Emergency! I am in danger and need help.');
             }
           },
           child: AnimatedContainer(
@@ -179,8 +199,8 @@ class _WelcomeHomeScreenState extends State<WelcomeHomeScreen> {
             height: buttonSize,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              color: _isSafeModeActive ? AppThemes.emergencyRed : Colors.blue.shade800, //
-              boxShadow: [ BoxShadow(color: (_isSafeModeActive ? AppThemes.emergencyRed : Colors.blue).withOpacity(0.5), blurRadius: 25, spreadRadius: 5) ], //
+              color: _isSafeModeActive ? AppThemes.emergencyRed : Colors.blue.shade800,
+              boxShadow: [ BoxShadow(color: (_isSafeModeActive ? AppThemes.emergencyRed : Colors.blue).withOpacity(0.5), blurRadius: 25, spreadRadius: 5) ],
             ),
             child: Center(
               child: Text(
@@ -201,7 +221,7 @@ class _WelcomeHomeScreenState extends State<WelcomeHomeScreen> {
               width: MediaQuery.of(context).size.width * 0.8,
               height: 60,
               child: ElevatedButton(
-                onPressed: () => setState(() => _isSafeModeActive = false),
+                onPressed: () => _toggleSafeMode(false),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.green.shade600,
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),

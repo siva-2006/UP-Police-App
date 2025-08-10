@@ -1,0 +1,83 @@
+/* Point of reference
+https://github.com/flutter/plugins/blob/main/packages/camera/camera/android/build.gradle
+*/
+
+group 'flutter.tflite_audio' //do not edit
+version '1.0'
+
+buildscript {
+    repositories {
+        google()
+        mavenCentral()
+        maven { url "https://oss.jfrog.org/libs-snapshot" } //rxjava
+    }
+
+    dependencies {
+        classpath 'com.android.tools.build:gradle:7.0.4'
+    }
+}
+
+rootProject.allprojects {
+    repositories {
+        google()
+        mavenLocal()
+    }
+}
+
+apply plugin: 'com.android.library'
+
+android {
+    namespace 'com.example.tflite_audio'
+    compileSdkVersion 31
+
+    defaultConfig {
+        ndk {
+            abiFilters 'armeabi-v7a', 'arm64-v8a'
+        }
+        targetSdkVersion 31
+        minSdkVersion 24
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+        
+    }
+
+    aaptOptions {
+        noCompress "tflite"
+    }
+
+    lintOptions {
+        disable 'InvalidPackage'
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
+
+    // https://stackoverflow.com/questions/57958239/how-to-mock-android-util-log
+    testOptions {
+        unitTests.includeAndroidResources = true
+        unitTests.returnDefaultValues = true
+        unitTests.all {
+            testLogging {
+               events "passed", "skipped", "failed", "standardOut", "standardError"
+               outputs.upToDateWhen {false}
+               showStandardStreams = true
+            }
+        }
+    }
+
+    dependencies {
+        implementation "androidx.appcompat:appcompat:1.4.1"
+        implementation 'androidx.annotation:annotation:1.3.0'
+        implementation files('../android/src/main/java/flutter/tflite_audio/lib/jlibrosa-1.1.8-SNAPSHOT-jar-with-dependencies.jar')
+
+        // TensorFlow Lite (specific version instead of '+')
+        implementation 'org.tensorflow:tensorflow-lite:2.9.0'
+        implementation 'org.tensorflow:tensorflow-lite-support:0.4.3'
+        implementation 'org.tensorflow:tensorflow-lite-metadata:0.4.3'
+
+        implementation 'io.reactivex.rxjava3:rxandroid:3.0.0'
+        implementation 'io.reactivex.rxjava3:rxjava:3.1.3'
+    }
+
+}
