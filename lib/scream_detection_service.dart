@@ -1,17 +1,23 @@
 // lib/scream_detection_service.dart
 import 'dart:async';
-import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_sound/flutter_sound.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:tflite_flutter/tflite_flutter.dart';
+import 'dart:math';
 
 class ScreamDetectionService {
   Interpreter? _interpreter;
   FlutterSoundRecorder? _recorder;
   StreamSubscription? _recordingDataSubscription;
   bool _isDetecting = false;
-  int _screamCount = 0;
+  List<double> _audioBuffer = [];
+  final int _modelInputLength = 44032;
+
+  // Confirmation logic
+  final int _confirmationRequiredCount = 3; // detections needed
+  final double _confirmationWindowSec = 2.0; // in seconds
+  List<DateTime> _positiveDetections = [];
 
   ScreamDetectionService() {
     _recorder = FlutterSoundRecorder();
@@ -38,24 +44,19 @@ class ScreamDetectionService {
 
     await _recorder!.openRecorder();
     _isDetecting = true;
-    _screamCount = 0;
 
-    // This is the correct implementation for getting a raw audio stream.
-    // The sink for the recorder expects Uint8List, so we create a controller of that type.
     final recordingDataController = StreamController<Uint8List>();
 
     _recordingDataSubscription = recordingDataController.stream.listen((buffer) {
-      if (_isDetecting) {
-        _runInference(buffer);
-      }
+      _runInference(buffer);
     });
 
-    // We pass our controller's sink to the startRecorder method.
     await _recorder!.startRecorder(
       toStream: recordingDataController.sink,
       codec: Codec.pcm16,
       numChannels: 1,
-      sampleRate: 16000, // Must match your model's requirement
+      sampleRate: 16000,
+      bufferSize: 16000, // bytes => 0.5 sec at 16kHz mono PCM16
     );
 
     print("Scream detection started...");
@@ -63,47 +64,62 @@ class ScreamDetectionService {
 
   void _runInference(Uint8List audioData) {
     if (_interpreter == null) return;
-    
-    // Convert the raw audio data (Uint8List of Int16) to the Float32List the model expects.
-    var input = audioData.buffer.asInt16List().map((e) => e / 32767.0).toList();
-    
-    // Ensure the data matches the model's required input size by padding or truncating.
-    const modelInputLength = 15600; 
-    if (input.length < modelInputLength) {
-        input.addAll(List.filled(modelInputLength - input.length, 0.0));
-    } else if (input.length > modelInputLength) {
-        input = input.sublist(0, modelInputLength);
-    }
-    
-    var inputArray = [input];
-    var output = List.filled(1 * 2, 0.0).reshape([1, 2]);
 
-    try {
-      _interpreter!.run(inputArray, output);
-      // As per your labels: 0 is Background Noise, 1 is Scream
-      double screamConfidence = output[0][1];
-      
-      if (screamConfidence > 0.9) { // Use a high threshold to avoid false positives
-        _screamCount++;
-         print('Consecutive screams detected: $_screamCount');
-        if (_screamCount >= 3) {
-          print('--- EMERGENCY TRIGGERED BY SCREAM ---');
-          // In the future, you would call the alert/location tracking functions here.
-          _screamCount = 0; // Reset after triggering
+    List<double> chunk = audioData.buffer
+        .asInt16List()
+        .map((e) => e / 32768.0)
+        .map((e) => e.isFinite ? e : 0.0)
+        .toList();
+
+    _audioBuffer.addAll(chunk);
+
+    if (_audioBuffer.length >= _modelInputLength) {
+      List<double> input = _audioBuffer.sublist(
+        _audioBuffer.length - _modelInputLength,
+      );
+
+      var inputArray = [input];
+      var output = List.filled(2, 0.0).reshape([1, 2]);
+
+      try {
+        _interpreter!.run(inputArray, output);
+
+        final exp0 = exp(output[0][0]);
+        final exp1 = exp(output[0][1]);
+        final sum = exp0 + exp1;
+        double screamConfidence = exp1 / sum;
+
+        if (screamConfidence > 0.6) {
+          _positiveDetections.add(DateTime.now());
+          _removeOldDetections();
+
+          if (_positiveDetections.length >= _confirmationRequiredCount) {
+            print(
+                '🔊 SCREAM CONFIRMED! (${_positiveDetections.length} detections in last $_confirmationWindowSec s, confidence: ${screamConfidence.toStringAsFixed(2)})');
+            _positiveDetections.clear(); // reset after confirmation
+          } else {
+            print(
+                '⚠️ Possible scream (${_positiveDetections.length}/$_confirmationRequiredCount in window, confidence: ${screamConfidence.toStringAsFixed(2)})');
+          }
+        } else {
+          _removeOldDetections();
+          // print('😐 No scream. Confidence: ${screamConfidence.toStringAsFixed(2)})');
         }
-      } else {
-        _screamCount = 0; // Reset if the sound is not a scream
+      } catch (e) {
+        print('❌ Error running model inference: $e');
       }
-    } catch (e) {
-      print('Error running model inference: $e');
     }
+  }
+
+  void _removeOldDetections() {
+    final now = DateTime.now();
+    _positiveDetections.removeWhere(
+        (t) => now.difference(t).inMilliseconds > _confirmationWindowSec * 1000);
   }
 
   Future<void> stop() async {
     if (!_isDetecting) return;
-    if (_recorder!.isRecording) {
-      await _recorder!.stopRecorder();
-    }
+    await _recorder?.stopRecorder();
     await _recordingDataSubscription?.cancel();
     _recordingDataSubscription = null;
     _isDetecting = false;
