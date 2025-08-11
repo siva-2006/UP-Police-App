@@ -5,7 +5,6 @@ import 'package:eclub_app/profile_screen.dart';
 import 'package:eclub_app/emergency_contacts_screen.dart';
 import 'package:eclub_app/app_themes.dart';
 import 'package:eclub_app/main.dart';
-import 'package:eclub_app/qr_scan_page.dart';
 import 'package:eclub_app/driver_details_screen.dart';
 import 'package:eclub_app/ride_history_page.dart';
 import 'package:eclub_app/more_settings_page.dart';

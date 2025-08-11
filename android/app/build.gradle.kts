@@ -8,7 +8,7 @@ plugins {
 android {
     namespace = "com.example.eclub_app" // <--- CORRECTED: Use '=' for assignment and double quotes
     compileSdk = flutter.compileSdkVersion // <--- CORRECTED: Use '=' for assignment
-    ndkVersion = "27.0.12077973" // <--- CORRECTED: Use '=' for assignment and double quotes
+    ndkVersion = "28.0.13004108" // <--- CORRECTED: Use '=' for assignment and double quotes
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11

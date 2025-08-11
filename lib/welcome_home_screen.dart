@@ -199,8 +199,16 @@ class _WelcomeHomeScreenState extends State<WelcomeHomeScreen> {
             height: buttonSize,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              color: _isSafeModeActive ? AppThemes.emergencyRed : Colors.blue.shade800,
-              boxShadow: [ BoxShadow(color: (_isSafeModeActive ? AppThemes.emergencyRed : Colors.blue).withOpacity(0.5), blurRadius: 25, spreadRadius: 5) ],
+              color: Theme.of(context).scaffoldBackgroundColor,
+              boxShadow: [
+                BoxShadow(
+                  color: _isSafeModeActive
+                      ? AppThemes.emergencyRed.withValues()
+                      : Colors.blue.withValues(), // Theme.of(context).brightness == Brightness.light ? 0.3 : 0.5),
+                  blurRadius: 25,
+                  spreadRadius: 5,
+                ),
+              ],
             ),
             child: Center(
               child: Text(

@@ -1,4 +1,3 @@
-// lib/qr_scan_page.dart
 import 'dart:io';
 import 'dart:convert';
 import 'package:camera/camera.dart';
@@ -8,6 +7,9 @@ import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:eclub_app/app_themes.dart';
 import 'package:eclub_app/driver_details_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:http/http.dart' as http;
+import 'dart:convert';
+import 'package:flutter/foundation.dart'; // Import for kDebugMode
 
 class QrScanPage extends StatefulWidget {
   const QrScanPage({super.key});
@@ -18,6 +20,8 @@ class QrScanPage extends StatefulWidget {
 
 class _QrScanPageState extends State<QrScanPage> with WidgetsBindingObserver {
   final MobileScannerController _qrController = MobileScannerController();
+
+  // For Photo Capture
   CameraController? _photoController;
   List<CameraDescription>? _cameras;
   XFile? _capturedImageFile;
@@ -26,7 +30,8 @@ class _QrScanPageState extends State<QrScanPage> with WidgetsBindingObserver {
   bool _isProcessing = false;
   bool _isTorchOn = false;
 
-  final String _serverUrl = 'http://192.168.137.1:3000';
+  // --- NEW: State variable to store driver data ---
+  Map<String, dynamic>? _driverData;
 
   @override
   void initState() {
@@ -85,7 +90,7 @@ class _QrScanPageState extends State<QrScanPage> with WidgetsBindingObserver {
         throw const FormatException("Missing 'name' in QR code.");
       }
 
-      await _addRideToHistory(driverDetails);
+
       
       if (mounted) {
         Navigator.pushReplacement(
@@ -110,17 +115,6 @@ class _QrScanPageState extends State<QrScanPage> with WidgetsBindingObserver {
     }
   }
   
-  Future<void> _addRideToHistory(Map<String, String> driverDetails) async {
-    final prefs = await SharedPreferences.getInstance();
-    final userPhone = prefs.getString('user_phone');
-    if (userPhone == null) return;
-    
-    await http.post(
-      Uri.parse('$_serverUrl/user/$userPhone/rides'),
-      headers: {'Content-Type': 'application/json'},
-      body: json.encode(driverDetails),
-    );
-  }
 
   void _retakePhoto() {
     setState(() {
@@ -135,6 +129,174 @@ class _QrScanPageState extends State<QrScanPage> with WidgetsBindingObserver {
     );
     _retakePhoto();
   }
+
+  // --- NEW: Function to reset state and start scanning again ---
+  void _startScanning() {
+    setState(() {
+      _driverData = null; // Clear the driver data
+      _isProcessing = false;
+      _scanMode = 'scan';
+    });
+    _qrController.start();
+  }
+
+  // Function to fetch driver details from backend
+  Future<void> _fetchDriverDetails(String driverId) async {
+    setState(() {
+      _isProcessing = true;
+      // Clear data immediately when starting fetch to prevent stale data
+      _driverData = null;
+    });
+
+    // Double-check the URL one last time
+    final String apiUrl = 'http://172.23.46.13:5000/api/driver/data/$driverId'; // Adjusted URL: Removed /api/driver/data/
+
+    if (kDebugMode) {
+      print('--- _fetchDriverDetails started ---');
+      print('Fetching from URL: $apiUrl');
+    }
+
+    try {
+      final response = await http.get(Uri.parse(apiUrl));
+
+      if (response.statusCode == 200) {
+        final Map<String, dynamic> data = json.decode(response.body);
+        if (kDebugMode) {
+          print('Raw response body: ${response.body}');
+          print('Parsed driver details data: $data');
+        }
+
+        setState(() {
+          _driverData = data; // Set the state with fetched data
+        });
+
+        if (kDebugMode) {
+          print('--- _driverData after setState: $_driverData ---');
+        }
+
+      } else {
+        if (kDebugMode) {
+          print('Failed to load driver details. Status code: ${response.statusCode}');
+          print('Response body: ${response.body}');
+        }
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to get driver details: ${response.statusCode} - ${response.body}')),
+        );
+      }
+    } catch (e) {
+      if (kDebugMode) {
+        print('Error fetching driver details: $e');
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Network error: Could not connect to server.')),
+      );
+    } finally {
+      setState(() {
+        _isProcessing = false;
+      });
+      _qrController.stop(); // Keep scanner stopped after fetching
+      if (kDebugMode) {
+        print('--- _fetchDriverDetails finished ---');
+      }
+    }
+  }
+
+  // --- NEW: Widget to display driver details on-screen ---
+  Widget _buildDriverDetailsView() {
+    // Add a print here to see if _driverData is null or populated when this is called
+    if (kDebugMode) {
+      print('Building Driver Details View. _driverData: $_driverData');
+    }
+
+    if (_driverData == null || _driverData!.isEmpty) { // Added .isEmpty check
+      return const SizedBox.shrink();
+    }
+
+    return Container(
+      color: Colors.black, // Background color for the full screen when details are shown
+      width: double.infinity,
+      child: SingleChildScrollView( // Allow scrolling if content overflows
+        padding: const EdgeInsets.all(20),
+        child: Center( // Center the card itself
+          child: Container(
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(15),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.15),
+                  blurRadius: 8,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min, // Make column only take required vertical space
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Driver Details',
+                  style: TextStyle(
+                    fontSize: 22,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.black87,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Divider(color: Colors.grey[300]),
+                const SizedBox(height: 10),
+
+                _buildDetailRow('First Name', _driverData!['firstName']),
+                _buildDetailRow('Last Name', _driverData!['lastName']),
+                _buildDetailRow('Vehicle Number', _driverData!['vehicleNum']),
+                _buildDetailRow('Mobile', _driverData!['mobile']),
+
+                const SizedBox(height: 20),
+                ElevatedButton.icon(
+                  onPressed: _startScanning,
+                  icon: const Icon(Icons.qr_code_scanner, color: Colors.white),
+                  label: const Text('Scan Again', style: TextStyle(color: Colors.white)),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppThemes.darkBlue,
+                    minimumSize: const Size(double.infinity, 50),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDetailRow(String label, dynamic value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 130, // Fixed width for labels for alignment
+            child: Text(
+              '$label:',
+              style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 16, color: Colors.black87),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              value?.toString() ?? 'N/A', // Ensure value is converted to string
+              style: const TextStyle(fontSize: 16, color: Colors.black),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
 
   @override
   Widget build(BuildContext context) {
@@ -165,7 +327,7 @@ class _QrScanPageState extends State<QrScanPage> with WidgetsBindingObserver {
             ),
             Container(
               padding: const EdgeInsets.all(20),
-              color: Colors.black.withOpacity(0.5),
+              color: Colors.black.withOpacity(0.8),
               child: _capturedImageFile != null
                   ? _buildPhotoControls()
                   : _buildCameraControls(),
@@ -180,7 +342,12 @@ class _QrScanPageState extends State<QrScanPage> with WidgetsBindingObserver {
     if (_capturedImageFile != null) {
       return Image.file(File(_capturedImageFile!.path), fit: BoxFit.cover);
     }
-    
+
+    // --- NEW: Check if driver data is available ---
+    if (_driverData != null) {
+      return _buildDriverDetailsView();
+    }
+
     if (_scanMode == 'scan') {
       return Stack(
         alignment: Alignment.center,
@@ -188,13 +355,35 @@ class _QrScanPageState extends State<QrScanPage> with WidgetsBindingObserver {
           MobileScanner(
             controller: _qrController,
             onDetect: (capture) {
+<<<<<<< HEAD
               if (_isProcessing || capture.barcodes.isEmpty) return;
               final String? code = capture.barcodes.first.rawValue;
               if (code != null) {
                 _handleScannedCode(code);
+=======
+              if (_isProcessing) return;
+              if (capture.barcodes.isNotEmpty) {
+                final barcode = capture.barcodes.first;
+                if (barcode.rawValue != null) {
+                  setState(() {
+                    _isProcessing = true;
+                  });
+                  _qrController.stop();
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('QR Scanned: ${barcode.rawValue}')),
+                  );
+                  _fetchDriverDetails(barcode.rawValue!);
+                }
+>>>>>>> e3a5e5c (changes)
               }
             },
           ),
+          if (_isProcessing)
+            const Center(
+              child: CircularProgressIndicator(
+                valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+              ),
+            ),
           Container(
             width: MediaQuery.of(context).size.width * 0.7,
             height: MediaQuery.of(context).size.width * 0.7,
@@ -228,7 +417,9 @@ class _QrScanPageState extends State<QrScanPage> with WidgetsBindingObserver {
                   _capturedImageFile = image;
                 });
               } catch (e) {
-                print("Error taking picture: $e");
+                if (kDebugMode) {
+                  print("Error taking picture: $e");
+                }
               }
             },
             child: Container(

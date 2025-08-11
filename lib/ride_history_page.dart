@@ -1,11 +1,14 @@
 // lib/ride_history_page.dart
 import 'dart:convert';
 import 'package:flutter/material.dart';
+<<<<<<< HEAD
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:intl/intl.dart';
 import 'package:eclub_app/app_themes.dart';
 import 'package:eclub_app/main.dart';
+=======
+>>>>>>> e3a5e5c (changes)
 
 class RideHistoryPage extends StatefulWidget {
   const RideHistoryPage({super.key});
@@ -50,6 +53,7 @@ class _RideHistoryPageState extends State<RideHistoryPage> {
 
   @override
   Widget build(BuildContext context) {
+<<<<<<< HEAD
      return ListenableBuilder(
       listenable: languageNotifier,
       builder: (context, child) {
@@ -92,6 +96,41 @@ class _RideHistoryPageState extends State<RideHistoryPage> {
                     ),
         );
       },
+=======
+    return Scaffold(
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+      appBar: AppBar(
+        title: const Text('Ride History'),
+      ),
+      body: ListView.builder(
+        padding: const EdgeInsets.all(16.0),
+        itemCount: dummyRides.length,
+        itemBuilder: (context, index) {
+          final ride = dummyRides[index];
+          final name = ride['name']!;
+          
+          return Card(
+            elevation: 2,
+            margin: const EdgeInsets.symmetric(vertical: 8),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+            child: ListTile(
+              contentPadding: const EdgeInsets.symmetric(vertical: 10, horizontal: 16),
+              leading: CircleAvatar(
+                radius: 28,
+                backgroundColor: Theme.of(context).primaryColor.withValues(),
+                child: Text(
+                  name.isNotEmpty ? name[0].toUpperCase() : '?',
+                  style: TextStyle(color: Theme.of(context).primaryColor, fontWeight: FontWeight.bold, fontSize: 22),
+                ),
+              ),
+              title: Text(name, style: const TextStyle(fontWeight: FontWeight.bold)),
+              subtitle: Text(ride['phone']!),
+              trailing: Text(ride['date']!),
+            ),
+          );
+        },
+      ),
+>>>>>>> e3a5e5c (changes)
     );
   }
 }

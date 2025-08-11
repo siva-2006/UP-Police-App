@@ -36,7 +36,7 @@ class _MoreSettingsPageState extends State<MoreSettingsPage> {
         borderRadius: BorderRadius.circular(20),
         boxShadow: [
           BoxShadow(
-            color: Theme.of(context).shadowColor.withOpacity(0.1),
+            color: Theme.of(context).shadowColor.withValues(),
             spreadRadius: 1,
             blurRadius: 3,
             offset: const Offset(0, 2),
@@ -74,7 +74,7 @@ class _MoreSettingsPageState extends State<MoreSettingsPage> {
         borderRadius: BorderRadius.circular(20),
         boxShadow: [
           BoxShadow(
-            color: Theme.of(context).shadowColor.withOpacity(0.1),
+            color: Theme.of(context).shadowColor.withValues(),
             spreadRadius: 1,
             blurRadius: 3,
             offset: const Offset(0, 2),

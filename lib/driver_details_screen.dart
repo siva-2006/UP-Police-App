@@ -1,6 +1,5 @@
 // lib/driver_details_screen.dart
 import 'package:flutter/material.dart';
-import 'package:eclub_app/app_themes.dart';
 
 class DriverDetailsScreen extends StatelessWidget {
   final Map<String, String> driverDetails;
