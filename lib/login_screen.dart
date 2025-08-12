@@ -2,7 +2,7 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
-import 'package:eclub_app/otp_verification_screen.dart';
+import 'package:eclub_app/enter_details_screen.dart';
 import 'package:eclub_app/welcome_home_screen.dart';
 import 'package:eclub_app/main.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -16,17 +16,17 @@ class LoginScreen extends StatefulWidget {
 
 class _LoginScreenState extends State<LoginScreen> {
   final TextEditingController _phoneController = TextEditingController();
-  final TextEditingController _passwordController = TextEditingController();
+  final TextEditingController _pinController = TextEditingController();
   bool _userExists = false;
   bool _isLoading = false;
   String? _phoneErrorText;
-
+  
   final String _serverUrl = 'http://192.168.137.1:3000';
 
   @override
   void dispose() {
     _phoneController.dispose();
-    _passwordController.dispose();
+    _pinController.dispose();
     super.dispose();
   }
 
@@ -64,7 +64,7 @@ class _LoginScreenState extends State<LoginScreen> {
           headers: {'Content-Type': 'application/json'},
           body: json.encode({
             'phoneNumber': _phoneController.text.trim(),
-            'password': _passwordController.text.trim(),
+            'pin': _pinController.text.trim(),
           }),
         );
         if (response.statusCode == 200 && mounted) {
@@ -75,14 +75,14 @@ class _LoginScreenState extends State<LoginScreen> {
           Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => const WelcomeHomeScreen()));
         } else if (mounted) {
           final data = jsonDecode(response.body);
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(data['message'] ?? 'Invalid credentials')));
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(data['message'] ?? 'Invalid PIN')));
         }
       } catch (e) {
         if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Login failed. Check server connection.")));
       }
     } else {
       if (_phoneController.text.trim().length == 10) {
-         Navigator.push(context, MaterialPageRoute(builder: (context) => OtpVerificationScreen(phoneNumber: _phoneController.text.trim())));
+         Navigator.push(context, MaterialPageRoute(builder: (context) => EnterDetailsScreen(phoneNumber: _phoneController.text.trim())));
       } else {
         setState(() {
           _phoneErrorText = isHindi ? 'कृपया एक मान्य 10-अंकीय फ़ोन नंबर दर्ज करें' : 'Enter valid 10-digit number';
@@ -153,10 +153,13 @@ class _LoginScreenState extends State<LoginScreen> {
                     Padding(
                       padding: EdgeInsets.symmetric(horizontal: screenWidth * 0.1, vertical: 16),
                       child: TextField(
-                        controller: _passwordController,
+                        controller: _pinController,
                         obscureText: true,
+                        maxLength: 4,
+                        keyboardType: TextInputType.number,
                         decoration: InputDecoration(
-                          labelText: isHindi ? 'पासवर्ड' : 'Password',
+                          counterText: "",
+                          labelText: isHindi ? '4-अंकीय पिन' : '4-Digit PIN',
                           border: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(8))),
                         ),
                       ),
@@ -176,7 +179,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         child: _isLoading
                             ? const CircularProgressIndicator(color: Colors.white)
                             : Text(
-                                _userExists ? (isHindi ? 'लॉगिन करें' : 'LOGIN') : (isHindi ? 'ओटीपी भेजें' : 'SEND OTP'),
+                                _userExists ? (isHindi ? 'लॉगिन करें' : 'LOGIN') : (isHindi ? 'आगे बढ़ें' : 'PROCEED'),
                                 style: TextStyle(
                                     fontFamily: isHindi ? 'Mukta' : 'Inter',
                                     color: Colors.white,

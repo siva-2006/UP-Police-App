@@ -89,7 +89,7 @@ class ScreamDetectionService {
         final sum = exp0 + exp1;
         double screamConfidence = exp1 / sum;
 
-        if (screamConfidence > 0.6) {
+        if (screamConfidence > 0.65) {
           _positiveDetections.add(DateTime.now());
           _removeOldDetections();
 
@@ -103,7 +103,7 @@ class ScreamDetectionService {
           }
         } else {
           _removeOldDetections();
-          // print('😐 No scream. Confidence: ${screamConfidence.toStringAsFixed(2)})');
+          print('😐 No scream. Confidence: ${screamConfidence.toStringAsFixed(2)})');
         }
       } catch (e) {
         print('❌ Error running model inference: $e');

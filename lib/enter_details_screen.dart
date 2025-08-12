@@ -19,7 +19,7 @@ class EnterDetailsScreen extends StatefulWidget {
 class _EnterDetailsScreenState extends State<EnterDetailsScreen> {
   final _formKey = GlobalKey<FormState>();
   final TextEditingController _nameController = TextEditingController();
-  final TextEditingController _passwordController = TextEditingController();
+  final TextEditingController _pinController = TextEditingController();
   final TextEditingController _aadhaarController = TextEditingController();
   final TextEditingController _dobController = TextEditingController();
   bool _isLoading = false;
@@ -29,7 +29,7 @@ class _EnterDetailsScreenState extends State<EnterDetailsScreen> {
   @override
   void dispose() {
     _nameController.dispose();
-    _passwordController.dispose();
+    _pinController.dispose();
     _aadhaarController.dispose();
     _dobController.dispose();
     super.dispose();
@@ -44,7 +44,7 @@ class _EnterDetailsScreenState extends State<EnterDetailsScreen> {
           headers: {'Content-Type': 'application/json'},
           body: json.encode({
             'phoneNumber': widget.phoneNumber,
-            'password': _passwordController.text.trim(),
+            'pin': _pinController.text.trim(),
             'name': _nameController.text.trim(),
             'aadhaarNumber': _aadhaarController.text.trim(),
             'dateOfBirth': _dobController.text.trim(),
@@ -128,10 +128,12 @@ class _EnterDetailsScreenState extends State<EnterDetailsScreen> {
                     const SizedBox(height: 24),
                      _buildTextFormField(
                       context: context,
-                      controller: _passwordController,
-                      label: isHindi ? 'पासवर्ड सेट करें' : 'Set Password',
+                      controller: _pinController,
+                      label: isHindi ? '4-अंकीय पिन सेट करें' : 'Set 4-Digit PIN',
                       isPassword: true,
-                      validator: (v) => v!.length < 6 ? (isHindi ? 'पासवर्ड न्यूनतम 6 अक्षर का होना चाहिए' : 'Password must be at least 6 characters') : null,
+                      maxLength: 4,
+                      keyboardType: TextInputType.number,
+                      validator: (v) => v!.length != 4 ? (isHindi ? 'पिन 4 अंकों का होना चाहिए' : 'PIN must be 4 digits') : null,
                     ),
                     const SizedBox(height: 24),
                     _buildTextFormField(

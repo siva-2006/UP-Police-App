@@ -1,9 +1,11 @@
 // lib/main.dart
 import 'package:eclub_app/login_screen.dart';
+import 'package:eclub_app/welcome_home_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:eclub_app/app_themes.dart';
 import 'package:eclub_app/theme_notifier.dart';
 import 'package:eclub_app/language_notifier.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 ThemeNotifier themeNotifier = ThemeNotifier();
 LanguageNotifier languageNotifier = LanguageNotifier();
@@ -11,11 +13,16 @@ LanguageNotifier languageNotifier = LanguageNotifier();
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await themeNotifier.loadThemeMode();
-  runApp(const MyApp());
+  
+  final prefs = await SharedPreferences.getInstance();
+  final bool isLoggedIn = prefs.getString('user_phone') != null;
+
+  runApp(MyApp(isLoggedIn: isLoggedIn));
 }
 
 class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+  final bool isLoggedIn;
+  const MyApp({super.key, required this.isLoggedIn});
 
   @override
   Widget build(BuildContext context) {
@@ -28,7 +35,7 @@ class MyApp extends StatelessWidget {
           theme: AppThemes.lightTheme,
           darkTheme: AppThemes.darkTheme,
           themeMode: themeNotifier.getThemeMode(),
-          home: const LoginScreen(),
+          home: isLoggedIn ? const WelcomeHomeScreen() : const LoginScreen(),
         );
       },
     );
