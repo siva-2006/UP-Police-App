@@ -149,7 +149,7 @@ class _QrScanPageState extends State<QrScanPage> with WidgetsBindingObserver {
     });
 
     // Double-check the URL one last time
-    final String apiUrl = 'http://172.23.46.13:5000/api/driver/data/$driverId'; // Adjusted URL: Removed /api/driver/data/
+    final String apiUrl = 'http://172.23.20.139:5000/api/driver/data/$driverId'; // Adjusted URL: Removed /api/driver/data/
 
     if (kDebugMode) {
       print('--- _fetchDriverDetails started ---');
