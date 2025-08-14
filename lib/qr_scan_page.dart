@@ -355,12 +355,6 @@ class _QrScanPageState extends State<QrScanPage> with WidgetsBindingObserver {
           MobileScanner(
             controller: _qrController,
             onDetect: (capture) {
-<<<<<<< HEAD
-              if (_isProcessing || capture.barcodes.isEmpty) return;
-              final String? code = capture.barcodes.first.rawValue;
-              if (code != null) {
-                _handleScannedCode(code);
-=======
               if (_isProcessing) return;
               if (capture.barcodes.isNotEmpty) {
                 final barcode = capture.barcodes.first;
@@ -374,7 +368,6 @@ class _QrScanPageState extends State<QrScanPage> with WidgetsBindingObserver {
                   );
                   _fetchDriverDetails(barcode.rawValue!);
                 }
->>>>>>> e3a5e5c (changes)
               }
             },
           ),
