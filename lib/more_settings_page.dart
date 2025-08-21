@@ -1,6 +1,6 @@
-// lib/more_settings_page.dart
+import 'package:eclub_app/main.dart';
 import 'package:flutter/material.dart';
-import 'package:eclub_app/app_themes.dart'; // For theme colors
+import 'package:shared_preferences/shared_preferences.dart';
 
 class MoreSettingsPage extends StatefulWidget {
   const MoreSettingsPage({super.key});
@@ -10,18 +10,46 @@ class MoreSettingsPage extends StatefulWidget {
 }
 
 class _MoreSettingsPageState extends State<MoreSettingsPage> {
-  bool sosEnabled = false;
-  bool shakeToShareEnabled = false;
   bool screamDetectionEnabled = false;
-  TextEditingController frequencyController = TextEditingController(text: "5");
+  String _selectedFrequency = "5";
+  final List<String> _frequencyOptions = ["5", "10", "15", "20", "30"];
 
   @override
-  void dispose() {
-    frequencyController.dispose();
-    super.dispose();
+  void initState() {
+    super.initState();
+    _loadSettings();
   }
 
-  // Helper for setting tiles (simplified, no language logic)
+  // NEW: Load the saved setting from SharedPreferences
+  Future<void> _loadSettings() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      // CHANGED: The default value is now 'true'
+      screamDetectionEnabled = prefs.getBool('screamDetectionEnabled') ?? true;
+      _selectedFrequency = prefs.getString('locationFrequency') ?? "5";
+    });
+  }
+
+  // NEW: Save the scream detection setting
+  Future<void> _setScreamDetection(bool value) async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      screamDetectionEnabled = value;
+    });
+    await prefs.setBool('screamDetectionEnabled', value);
+  }
+
+  // NEW: Save the frequency setting
+  Future<void> _setFrequency(String? value) async {
+    if (value == null) return;
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      _selectedFrequency = value;
+    });
+    await prefs.setString('locationFrequency', value);
+  }
+
+
   Widget _buildSettingTile({
     required BuildContext context,
     required String label,
@@ -32,7 +60,7 @@ class _MoreSettingsPageState extends State<MoreSettingsPage> {
       margin: const EdgeInsets.symmetric(vertical: 6),
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       decoration: BoxDecoration(
-        color: Theme.of(context).cardColor, // Themed background
+        color: Theme.of(context).cardColor,
         borderRadius: BorderRadius.circular(20),
         boxShadow: [
           BoxShadow(
@@ -49,9 +77,9 @@ class _MoreSettingsPageState extends State<MoreSettingsPage> {
           Text(
             label,
             style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-              color: Theme.of(context).textTheme.bodyLarge?.color,
-              fontSize: 16,
-            ),
+                  color: Theme.of(context).textTheme.bodyLarge?.color,
+                  fontSize: 16,
+                ),
           ),
           Switch(
             value: value,
@@ -64,13 +92,12 @@ class _MoreSettingsPageState extends State<MoreSettingsPage> {
     );
   }
 
-  // Helper for frequency tile (simplified, no language logic)
-  Widget _buildFrequencyTile(BuildContext context) {
+  Widget _buildFrequencyTile(BuildContext context, bool isHindi) {
     return Container(
       margin: const EdgeInsets.symmetric(vertical: 6),
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       decoration: BoxDecoration(
-        color: Theme.of(context).cardColor, // Themed background
+        color: Theme.of(context).cardColor,
         borderRadius: BorderRadius.circular(20),
         boxShadow: [
           BoxShadow(
@@ -81,35 +108,44 @@ class _MoreSettingsPageState extends State<MoreSettingsPage> {
           ),
         ],
       ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            'Sending freq.', // Hardcoded English
-            style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-              color: Theme.of(context).textTheme.bodyLarge?.color,
-              fontSize: 16,
-            ),
-          ),
-          SizedBox(
-            width: 60,
-            child: TextField(
-              controller: frequencyController,
-              keyboardType: TextInputType.number,
-              textAlign: TextAlign.center,
-              style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                color: Theme.of(context).textTheme.bodyLarge?.color,
-              ),
-              decoration: InputDecoration(
-                contentPadding: const EdgeInsets.symmetric(vertical: 0, horizontal: 8),
-                isDense: true,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide.none,
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Expanded(
+                child: Text(
+                  isHindi ? 'स्थान भेजने की आवृत्ति' : 'Location Sending Frequency',
+                  style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                        color: Theme.of(context).textTheme.bodyLarge?.color,
+                        fontSize: 16,
+                      ),
                 ),
-                filled: true,
-                fillColor: Theme.of(context).colorScheme.surface,
               ),
+              const SizedBox(width: 16),
+              DropdownButton<String>(
+                value: _selectedFrequency,
+                onChanged: (String? newValue) {
+                  _setFrequency(newValue); // Save the new value
+                },
+                items: _frequencyOptions.map<DropdownMenuItem<String>>((String value) {
+                  return DropdownMenuItem<String>(
+                    value: value,
+                    child: Text("$value sec"),
+                  );
+                }).toList(),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Padding(
+            padding: const EdgeInsets.only(right: 8.0),
+            child: Text(
+              isHindi
+                  ? 'आपातकालीन संपर्कों और पुलिस को स्थान और एसएमएस भेजने के बीच का अंतराल।'
+                  : "Interval between sending location and SMS to emergency contacts and police.",
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.grey[600]),
             ),
           ),
         ],
@@ -117,105 +153,66 @@ class _MoreSettingsPageState extends State<MoreSettingsPage> {
     );
   }
 
-  @override
-  Widget build(BuildContext context) {
-    final screenWidth = MediaQuery.of(context).size.width;
-    const double headerFixedPxHeight = 70.0;
-
-    return Scaffold(
-      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
-      body: SafeArea(
-        child: Column(
+  Widget _buildLanguageButton(bool isHindi) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6.0),
+      child: MaterialButton(
+        onPressed: () => languageNotifier.toggleLanguage(),
+        color: Theme.of(context).cardColor,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            // Top Flat Blue Header Bar (consistent with other pages)
-            Container(
-              height: headerFixedPxHeight,
-              width: double.infinity,
-              color: AppThemes.darkBlue,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 20.0),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    IconButton(
-                      icon: const Icon(Icons.person_outline, color: Colors.white, size: 28),
-                      onPressed: () { print('Profile Icon Pressed from Settings'); },
-                      padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints(),
-                    ),
-                    Row(
-                      children: [
-                        Image.asset(
-                          'assets/images/image_6d3861.png',
-                          height: headerFixedPxHeight * 0.6,
-                          width: headerFixedPxHeight * 0.6 * (11/7),
-                        ),
-                        const SizedBox(width: 10),
-                        Text(
-                          'ASTRA',
-                          style: Theme.of(context).textTheme.headlineLarge?.copyWith(
-                            color: Colors.white,
-                            fontSize: 28,
-                            fontWeight: FontWeight.bold,
-                            letterSpacing: 2,
-                          ),
-                        ),
-                      ],
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.settings, color: Colors.white, size: 28),
-                      onPressed: () { print('Settings Icon Pressed from Settings'); },
-                      padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints(),
-                    ),
-                  ],
-                ),
-              ),
+            Text(
+              isHindi ? 'भाषा बदलें (English)' : 'Change Language (हिन्दी)',
+              style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                    color: Theme.of(context).textTheme.bodyLarge?.color,
+                    fontSize: 16,
+                  ),
             ),
-            const SizedBox(height: 20),
-
-            // Main content area
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16.0),
-                child: Column(
-                  children: [
-                    const SizedBox(height: 20),
-
-                    _buildSettingTile(
-                      context: context,
-                      label: 'SOS button', // Hardcoded English
-                      value: sosEnabled,
-                      onChanged: (val) { setState(() { sosEnabled = val; }); },
-                    ),
-
-                    _buildSettingTile(
-                      context: context,
-                      label: 'Shake to share', // Hardcoded English
-                      value: shakeToShareEnabled,
-                      onChanged: (val) { setState(() { shakeToShareEnabled = val; }); },
-                    ),
-
-                    _buildSettingTile(
-                      context: context,
-                      label: 'Scream detection', // Hardcoded English
-                      value: screamDetectionEnabled,
-                      onChanged: (val) { setState(() { screamDetectionEnabled = val; }); },
-                    ),
-
-                    _buildFrequencyTile(context),
-
-                    const Spacer(), // Pushes content up
-
-                    // Removed language buttons
-                    // const SizedBox(height: 20), // Bottom padding
-                  ],
-                ),
-              ),
-            ),
+            Icon(Icons.language, color: Theme.of(context).iconTheme.color),
           ],
         ),
       ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ListenableBuilder(
+      listenable: languageNotifier,
+      builder: (context, child) {
+        final isHindi = languageNotifier.isHindi;
+        return Scaffold(
+          backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+          appBar: AppBar(
+            title: Text(isHindi ? 'अधिक सेटिंग्स' : 'More Settings'),
+            centerTitle: true,
+          ),
+          body: SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Column(
+                children: [
+                  const SizedBox(height: 20),
+                  _buildSettingTile(
+                    context: context,
+                    label: isHindi ? 'चीख पहचान' : 'Scream detection',
+                    value: screamDetectionEnabled,
+                    onChanged: (val) {
+                      _setScreamDetection(val); // Save the new value
+                    },
+                  ),
+                  _buildFrequencyTile(context, isHindi),
+                  const SizedBox(height: 20),
+                  _buildLanguageButton(isHindi),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 }

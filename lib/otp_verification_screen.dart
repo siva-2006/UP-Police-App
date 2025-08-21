@@ -68,7 +68,7 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
                         borderRadius: BorderRadius.only(bottomLeft: Radius.circular(50), bottomRight: Radius.circular(50)),
                       ),
                       child: Center(
-                        child: Text('ASTRA', style: Theme.of(context).textTheme.headlineLarge?.copyWith(fontSize: 36, color: Colors.white)),
+                        child: Text('Jagriti Suraksha', style: Theme.of(context).textTheme.headlineLarge?.copyWith(fontSize: 26, color: Colors.white)),
                       ),
                     ),
                   ),

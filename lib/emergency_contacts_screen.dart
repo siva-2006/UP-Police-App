@@ -1,4 +1,3 @@
-// lib/emergency_contacts_screen.dart
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
@@ -6,6 +5,7 @@ import 'package:eclub_app/app_themes.dart';
 import 'package:eclub_app/main.dart';
 import 'package:flutter_contacts/flutter_contacts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:hive/hive.dart';
 
 class EmergencyContactsScreen extends StatefulWidget {
   const EmergencyContactsScreen({super.key});
@@ -21,10 +21,12 @@ class _EmergencyContactsScreenState extends State<EmergencyContactsScreen> {
   String? expandedContactId;
 
   final String _serverUrl = 'http://192.168.137.1:3000';
+  late final Box _contactsBox;
 
   @override
   void initState() {
     super.initState();
+    _contactsBox = Hive.box('emergency_contacts');
     _loadContacts();
   }
 
@@ -38,15 +40,38 @@ class _EmergencyContactsScreenState extends State<EmergencyContactsScreen> {
     }
     
     try {
+      // Try to fetch from the server
       final response = await http.get(Uri.parse('$_serverUrl/user/$_userPhone/contacts'));
       if (mounted && response.statusCode == 200) {
+        final serverContacts = jsonDecode(response.body);
         setState(() {
-          _contacts = jsonDecode(response.body);
+          _contacts = serverContacts;
           _isLoading = false;
         });
+        // Save the fresh contacts to the local database
+        await _contactsBox.put('contacts', serverContacts);
+      } else {
+        // If server fails, load from local database
+        _loadFromLocal();
       }
     } catch (e) {
-       if (mounted) setState(() { _isLoading = false; });
+       // If there's a network error, load from local database
+       _loadFromLocal();
+    }
+  }
+
+  void _loadFromLocal() {
+    final localContacts = _contactsBox.get('contacts', defaultValue: []);
+    if(mounted) {
+      setState(() {
+        _contacts = List<dynamic>.from(localContacts);
+        _isLoading = false;
+      });
+      if (localContacts.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('No contacts found. Please connect to the internet to sync.')));
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Showing offline contacts. Connect to internet to refresh.')));
+      }
     }
   }
   
@@ -63,12 +88,16 @@ class _EmergencyContactsScreenState extends State<EmergencyContactsScreen> {
           return;
         }
 
-        await http.post(
-          Uri.parse('$_serverUrl/user/$_userPhone/contacts'),
-          headers: {'Content-Type': 'application/json'},
-          body: json.encode({'name': newName, 'phone': newNumber}),
-        );
-        _loadContacts();
+        try {
+          await http.post(
+            Uri.parse('$_serverUrl/user/$_userPhone/contacts'),
+            headers: {'Content-Type': 'application/json'},
+            body: json.encode({'name': newName, 'phone': newNumber}),
+          );
+          _loadContacts();
+        } catch (e) {
+          if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Failed to add contact. Check your internet connection.')));
+        }
       }
     }
   }
@@ -85,7 +114,7 @@ class _EmergencyContactsScreenState extends State<EmergencyContactsScreen> {
       }
     } catch (e) {
        if (mounted) {
-           ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: ${e.toString()}')));
+           ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed to delete. Check your internet connection.')));
         }
     }
   }

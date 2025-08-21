@@ -93,7 +93,7 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
 
         return Scaffold(
           appBar: AppBar(
-            title: Text(isHindi ? 'अस्त्र' : 'ASTRA'),
+            title: Text(isHindi ? 'जागृति सुरक्षा' : 'Jagriti Suraksha'),
             centerTitle: true,
             actions: [
               IconButton(

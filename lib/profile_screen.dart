@@ -1,4 +1,3 @@
-// lib/profile_screen.dart
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
@@ -6,6 +5,7 @@ import 'package:intl/intl.dart';
 import 'package:eclub_app/app_themes.dart';
 import 'package:eclub_app/main.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:hive/hive.dart'; // Import Hive
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -26,10 +26,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
   String? _userPhone;
   
   final String _serverUrl = 'http://192.168.137.1:3000';
+  late final Box _profileBox;
 
   @override
   void initState() {
     super.initState();
+    _profileBox = Hive.box('user_profile');
     _loadProfileDetails();
   }
 
@@ -42,49 +44,80 @@ class _ProfileScreenState extends State<ProfileScreen> {
     super.dispose();
   }
 
+  // UPDATED: This function now includes an offline fallback
   Future<void> _loadProfileDetails() async {
     setState(() { _isLoading = true; });
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      _userPhone = prefs.getString('user_phone');
-      if (_userPhone == null) {
-        if (mounted) setState(() => _isLoading = false);
-        return;
-      }
+    final prefs = await SharedPreferences.getInstance();
+    _userPhone = prefs.getString('user_phone');
+    if (_userPhone == null) {
+      if (mounted) setState(() => _isLoading = false);
+      return;
+    }
 
+    try {
+      // Try to fetch the latest data from the server
       final response = await http.get(Uri.parse('$_serverUrl/user/profile/$_userPhone'));
       if (mounted && response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        _nameController.text = data['name'] ?? '';
-        _mobileNoController.text = data['phoneNumber'] ?? '';
-        _aadhaarNoController.text = data['aadhaarNumber'] ?? '';
-        _dobController.text = data['dateOfBirth'] ?? '';
+        final serverData = jsonDecode(response.body);
+        _updateTextFields(serverData);
+        // Save the latest data to the local database
+        await _profileBox.put('profile', serverData);
+      } else {
+        // If the server fails, load from the local database
+        _loadFromLocal();
       }
     } catch (e) {
-      print("Error loading profile: $e");
+      // If there's a network error, load from the local database
+      _loadFromLocal();
     } finally {
       if (mounted) setState(() { _isLoading = false; });
     }
+  }
+
+  // NEW: This function loads data from the Hive box
+  void _loadFromLocal() {
+    final localData = _profileBox.get('profile');
+    if (mounted && localData != null) {
+      _updateTextFields(Map<String, dynamic>.from(localData));
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Showing offline profile. Connect to internet to refresh.')));
+    } else if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Could not load profile. Please connect to the internet.')));
+    }
+  }
+  
+  // NEW: Helper function to avoid code duplication
+  void _updateTextFields(Map<String, dynamic> data) {
+    _nameController.text = data['name'] ?? '';
+    _mobileNoController.text = data['phoneNumber'] ?? '';
+    _aadhaarNoController.text = data['aadhaarNumber'] ?? '';
+    _dobController.text = data['dateOfBirth'] ?? '';
   }
 
   Future<void> _saveProfileDetails() async {
     if (_formKey.currentState!.validate()) {
       setState(() { _isLoading = true; });
       try {
+        final body = {
+          'name': _nameController.text.trim(),
+          'aadhaarNumber': _aadhaarNoController.text.trim(),
+          'dateOfBirth': _dobController.text.trim(),
+        };
+
         await http.put(
           Uri.parse('$_serverUrl/user/profile/$_userPhone'),
           headers: {'Content-Type': 'application/json'},
-          body: json.encode({
-            'name': _nameController.text.trim(),
-            'aadhaarNumber': _aadhaarNoController.text.trim(),
-            'dateOfBirth': _dobController.text.trim(),
-          }),
+          body: json.encode(body),
         );
+
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Profile updated!')));
+          // Also save the updated details to the local cache
+          final updatedProfileData = _profileBox.get('profile') ?? {};
+          updatedProfileData.addAll(body);
+          await _profileBox.put('profile', updatedProfileData);
         }
       } catch (e) {
-        print("Error saving profile: $e");
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Failed to save. Check your internet connection.')));
       } finally {
         if (mounted) setState(() { _isLoading = false; _isEditing = false; });
       }
@@ -94,6 +127,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   void _discardChanges() {
     setState(() {
       _isEditing = false;
+      // Reload the data to discard any changes
       _loadProfileDetails();
     });
   }

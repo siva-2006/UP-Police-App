@@ -6,13 +6,23 @@ import 'package:eclub_app/app_themes.dart';
 import 'package:eclub_app/theme_notifier.dart';
 import 'package:eclub_app/language_notifier.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:hive_flutter/hive_flutter.dart';
+import 'package:eclub_app/notification_service.dart';
+
 
 ThemeNotifier themeNotifier = ThemeNotifier();
 LanguageNotifier languageNotifier = LanguageNotifier();
 
+final NotificationService notificationService = NotificationService();
+
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await themeNotifier.loadThemeMode();
+  await notificationService.initialize();
+  await Hive.initFlutter(); // Initialize Hive
+  await Hive.openBox('emergency_contacts'); // Open a box for contacts
+  await Hive.openBox('user_profile');
   
   final prefs = await SharedPreferences.getInstance();
   final bool isLoggedIn = prefs.getString('user_phone') != null;
@@ -30,7 +40,7 @@ class MyApp extends StatelessWidget {
       listenable: Listenable.merge([themeNotifier, languageNotifier]),
       builder: (context, child) {
         return MaterialApp(
-          title: 'Astra App',
+          title: 'Jagriti Suraksha',
           debugShowCheckedModeBanner: false,
           theme: AppThemes.lightTheme,
           darkTheme: AppThemes.darkTheme,

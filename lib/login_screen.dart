@@ -118,7 +118,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                     ),
                     child: Center(
-                      child: Text('ASTRA', style: Theme.of(context).textTheme.headlineLarge?.copyWith(fontSize: 36, color: Colors.white)),
+                      child: Text(isHindi ? 'जागृति सुरक्षा' : 'Jagriti Suraksha', style: Theme.of(context).textTheme.headlineLarge?.copyWith(fontSize: 26, color: Colors.white)),
                     ),
                   ),
                   SizedBox(height: screenHeight * 0.03),

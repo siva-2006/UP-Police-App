@@ -7,7 +7,7 @@ import 'package:camera/camera.dart';
 import 'package:http/http.dart' as http;
 import 'package:mobile_scanner/mobile_scanner.dart';
 
-import 'app_themes.dart'; // Make sure you have your AppThemes defined somewhere
+import 'app_themes.dart';
 
 class QrScanPage extends StatefulWidget {
   final String initialScanMode;
@@ -22,10 +22,7 @@ class QrScanPage extends StatefulWidget {
 }
 
 class _QrScanPageState extends State<QrScanPage> with WidgetsBindingObserver {
-  // For QR Scanning
   final MobileScannerController _qrController = MobileScannerController();
-
-  // For Photo Capture
   CameraController? _photoController;
   List<CameraDescription>? _cameras;
   XFile? _capturedImageFile;
@@ -34,7 +31,6 @@ class _QrScanPageState extends State<QrScanPage> with WidgetsBindingObserver {
   bool _isProcessing = false;
   bool _isTorchOn = false;
 
-  // State variable to store driver data
   Map<String, dynamic>? _driverData;
 
   @override
@@ -42,10 +38,18 @@ class _QrScanPageState extends State<QrScanPage> with WidgetsBindingObserver {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _scanMode = widget.initialScanMode;
-    _initializeCamera();
+
+    if (_scanMode == 'photo') {
+      _initializePhotoCamera();
+    }
   }
 
-  Future<void> _initializeCamera() async {
+  Future<void> _initializePhotoCamera() async {
+    // Ensure the QR scanner is not running
+    if (_qrController.isStarting) {
+      await _qrController.stop();
+    }
+    
     _cameras = await availableCameras();
     if (_cameras != null && _cameras!.isNotEmpty) {
       _photoController = CameraController(
@@ -54,21 +58,48 @@ class _QrScanPageState extends State<QrScanPage> with WidgetsBindingObserver {
       );
       await _photoController!.initialize();
       if (mounted) {
-        setState(() {}); // Update UI once camera is initialized
+        setState(() {});
       }
+    }
+  }
+
+  // CORRECTED: This function is now async to handle camera resource management properly.
+  Future<void> _setScanMode(String mode) async {
+    if (_scanMode == mode) return;
+
+    if (mode == 'photo') {
+      // Stop QR scanner and initialize photo camera
+      await _qrController.stop();
+      await _initializePhotoCamera();
+    } else {
+      // Dispose photo camera and start QR scanner
+      await _photoController?.dispose();
+      _photoController = null;
+      // Let the MobileScanner widget restart the controller automatically
+    }
+
+    if (mounted) {
+      setState(() {
+        _scanMode = mode;
+        _isProcessing = false;
+        _capturedImageFile = null;
+      });
     }
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     super.didChangeAppLifecycleState(state);
-    if (_photoController == null || !_photoController!.value.isInitialized) {
+    if (_scanMode == 'scan') return;
+
+    final controller = _photoController;
+    if (controller == null || !controller.value.isInitialized) {
       return;
     }
     if (state == AppLifecycleState.inactive) {
-      _photoController!.dispose();
+      controller.dispose();
     } else if (state == AppLifecycleState.resumed) {
-      _initializeCamera();
+      _initializePhotoCamera();
     }
   }
 
@@ -86,25 +117,22 @@ class _QrScanPageState extends State<QrScanPage> with WidgetsBindingObserver {
       _isProcessing = false;
     });
   }
-
+  
   void _sendEvidence() {
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('Evidence sent. Reporting feature coming soon.')),
     );
-    _retakePhoto();
+    // This will now correctly await the camera resource handover
+    _setScanMode('scan');
   }
 
-  // Reset state and start scanning again
   void _startScanning() {
+    _setScanMode('scan');
     setState(() {
-      _driverData = null; // Clear driver data
-      _isProcessing = false;
-      _scanMode = 'scan';
+      _driverData = null;
     });
-    _qrController.start();
   }
 
-  // Fetch driver details from backend
   Future<void> _fetchDriverDetails(String driverId) async {
     setState(() {
       _isProcessing = true;
@@ -120,36 +148,22 @@ class _QrScanPageState extends State<QrScanPage> with WidgetsBindingObserver {
         if (kDebugMode) {
           print('Driver details fetched: $data');
         }
-        setState(() {
-          _driverData = data;
-        });
+        if(mounted) setState(() => _driverData = data);
       } else {
-        if (kDebugMode) {
-          print('Failed to load driver details. Status code: ${response.statusCode}');
-        }
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to get driver details: ${response.statusCode}')),
-        );
+        if (kDebugMode) print('Failed to load driver details. Status code: ${response.statusCode}');
+        if(mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed to get driver details: ${response.statusCode}')));
       }
     } catch (e) {
-      if (kDebugMode) {
-        print('Error fetching driver details: $e');
-      }
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Network error: Could not connect to server.')),
-      );
+      if (kDebugMode) print('Error fetching driver details: $e');
+      if(mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Network error: Could not connect to server.')));
     } finally {
-      setState(() {
-        _isProcessing = false;
-      });
-      _qrController.stop(); // Stop scanner after fetching
+      if (mounted) setState(() => _isProcessing = false);
     }
   }
 
   Widget _buildDriverDetailsView() {
-    if (_driverData == null) {
-      return const SizedBox.shrink();
-    }
+    if (_driverData == null) return const SizedBox.shrink();
+    
     return Container(
       color: Colors.black,
       width: double.infinity,
@@ -160,25 +174,12 @@ class _QrScanPageState extends State<QrScanPage> with WidgetsBindingObserver {
           decoration: BoxDecoration(
             color: Colors.white,
             borderRadius: BorderRadius.circular(15),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.15),
-                blurRadius: 8,
-                offset: const Offset(0, 4),
-              ),
-            ],
+            boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.15), blurRadius: 8, offset: const Offset(0, 4))],
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text(
-                'Driver Details',
-                style: TextStyle(
-                  fontSize: 22,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.black87,
-                ),
-              ),
+              const Text('Driver Details', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.black87)),
               const SizedBox(height: 10),
               Divider(color: Colors.grey[300]),
               const SizedBox(height: 10),
@@ -209,19 +210,8 @@ class _QrScanPageState extends State<QrScanPage> with WidgetsBindingObserver {
       padding: const EdgeInsets.symmetric(vertical: 6),
       child: Row(
         children: [
-          SizedBox(
-            width: 130,
-            child: Text(
-              '$label:',
-              style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 16),
-            ),
-          ),
-          Expanded(
-            child: Text(
-              value?.toString() ?? 'N/A',
-              style: const TextStyle(fontSize: 16),
-            ),
-          ),
+          SizedBox(width: 130, child: Text('$label:', style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 16))),
+          Expanded(child: Text(value?.toString() ?? 'N/A', style: const TextStyle(fontSize: 16))),
         ],
       ),
     );
@@ -237,19 +227,14 @@ class _QrScanPageState extends State<QrScanPage> with WidgetsBindingObserver {
         actions: [
           IconButton(
             onPressed: () {
+              setState(() => _isTorchOn = !_isTorchOn);
               if (_scanMode == 'scan') {
                 _qrController.toggleTorch();
               } else {
-                _photoController?.setFlashMode(_isTorchOn ? FlashMode.off : FlashMode.torch);
+                _photoController?.setFlashMode(_isTorchOn ? FlashMode.torch : FlashMode.off);
               }
-              setState(() {
-                _isTorchOn = !_isTorchOn;
-              });
             },
-            icon: Icon(
-              _isTorchOn ? Icons.flashlight_on : Icons.flashlight_off,
-              color: _isTorchOn ? Colors.yellow : Colors.white,
-            ),
+            icon: Icon(_isTorchOn ? Icons.flashlight_on : Icons.flashlight_off, color: _isTorchOn ? Colors.yellow : Colors.white),
           ),
         ],
       ),
@@ -260,9 +245,7 @@ class _QrScanPageState extends State<QrScanPage> with WidgetsBindingObserver {
             Container(
               padding: const EdgeInsets.all(20),
               color: Colors.black.withOpacity(0.8),
-              child: _capturedImageFile != null
-                  ? _buildPhotoControls()
-                  : _buildCameraControls(),
+              child: _capturedImageFile != null ? _buildPhotoControls() : _buildCameraControls(),
             ),
           ],
         ),
@@ -271,13 +254,8 @@ class _QrScanPageState extends State<QrScanPage> with WidgetsBindingObserver {
   }
 
   Widget _buildCameraView() {
-    if (_capturedImageFile != null) {
-      return Image.file(File(_capturedImageFile!.path), fit: BoxFit.cover);
-    }
-
-    if (_driverData != null) {
-      return _buildDriverDetailsView();
-    }
+    if (_capturedImageFile != null) return Image.file(File(_capturedImageFile!.path), fit: BoxFit.cover);
+    if (_driverData != null) return _buildDriverDetailsView();
 
     if (_scanMode == 'scan') {
       return Stack(
@@ -286,42 +264,25 @@ class _QrScanPageState extends State<QrScanPage> with WidgetsBindingObserver {
           MobileScanner(
             controller: _qrController,
             onDetect: (capture) {
-              if (_isProcessing) return;
-              if (capture.barcodes.isNotEmpty) {
-                final barcode = capture.barcodes.first;
-                if (barcode.rawValue != null) {
-                  setState(() {
-                    _isProcessing = true;
-                  });
-                  _qrController.stop();
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('QR Scanned: ${barcode.rawValue}')),
-                  );
-                  _fetchDriverDetails(barcode.rawValue!);
-                }
+              if (_isProcessing || capture.barcodes.isEmpty) return;
+              final barcode = capture.barcodes.first;
+              if (barcode.rawValue != null) {
+                _qrController.stop();
+                ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('QR Scanned: ${barcode.rawValue}')));
+                _fetchDriverDetails(barcode.rawValue!);
               }
             },
           ),
-          if (_isProcessing)
-            const Center(
-              child: CircularProgressIndicator(
-                valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-              ),
-            ),
+          if (_isProcessing) const Center(child: CircularProgressIndicator(valueColor: AlwaysStoppedAnimation<Color>(Colors.white))),
           Container(
             width: MediaQuery.of(context).size.width * 0.7,
             height: MediaQuery.of(context).size.width * 0.7,
-            decoration: BoxDecoration(
-              border: Border.all(color: Colors.white, width: 2),
-              borderRadius: BorderRadius.circular(12),
-            ),
+            decoration: BoxDecoration(border: Border.all(color: Colors.white, width: 2), borderRadius: BorderRadius.circular(12)),
           ),
         ],
       );
     } else {
-      if (_photoController == null || !_photoController!.value.isInitialized) {
-        return const Center(child: CircularProgressIndicator());
-      }
+      if (_photoController == null || !_photoController!.value.isInitialized) return const Center(child: CircularProgressIndicator());
       return CameraPreview(_photoController!);
     }
   }
@@ -337,13 +298,9 @@ class _QrScanPageState extends State<QrScanPage> with WidgetsBindingObserver {
               if (_photoController == null || !_photoController!.value.isInitialized) return;
               try {
                 final XFile image = await _photoController!.takePicture();
-                setState(() {
-                  _capturedImageFile = image;
-                });
+                if(mounted) setState(() => _capturedImageFile = image);
               } catch (e) {
-                if (kDebugMode) {
-                  print("Error taking picture: $e");
-                }
+                if (kDebugMode) print("Error taking picture: $e");
               }
             },
             child: Container(
@@ -365,19 +322,13 @@ class _QrScanPageState extends State<QrScanPage> with WidgetsBindingObserver {
           onPressed: _retakePhoto,
           icon: const Icon(Icons.refresh),
           label: const Text('Retake'),
-          style: ElevatedButton.styleFrom(
-            backgroundColor: Colors.white,
-            foregroundColor: Colors.black,
-          ),
+          style: ElevatedButton.styleFrom(backgroundColor: Colors.white, foregroundColor: Colors.black),
         ),
         ElevatedButton.icon(
           onPressed: _sendEvidence,
           icon: const Icon(Icons.send),
           label: const Text('Send Evidence'),
-          style: ElevatedButton.styleFrom(
-            backgroundColor: AppThemes.emergencyRed,
-            foregroundColor: Colors.white,
-          ),
+          style: ElevatedButton.styleFrom(backgroundColor: AppThemes.emergencyRed, foregroundColor: Colors.white),
         ),
       ],
     );
@@ -386,17 +337,8 @@ class _QrScanPageState extends State<QrScanPage> with WidgetsBindingObserver {
   Widget _buildModeButton(String mode, IconData icon) {
     bool isSelected = _scanMode == mode;
     return IconButton(
-      onPressed: () {
-        setState(() {
-          _scanMode = mode;
-          _isProcessing = false;
-        });
-      },
-      icon: Icon(
-        icon,
-        color: isSelected ? AppThemes.tealGreen : Colors.white,
-        size: 30,
-      ),
+      onPressed: () => _setScanMode(mode),
+      icon: Icon(icon, color: isSelected ? AppThemes.tealGreen : Colors.white, size: 30),
     );
   }
 }

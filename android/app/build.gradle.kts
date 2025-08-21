@@ -11,6 +11,8 @@ android {
     ndkVersion = "27.0.12077973" // <--- CORRECTED: Use '=' for assignment and double quotes
 
     compileOptions {
+        isCoreLibraryDesugaringEnabled = true
+
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11
     }
@@ -28,6 +30,21 @@ android {
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+
+        ext.set("tfliteFlutterOptions", mapOf(
+            "buildFlavors" to listOf(
+                "tflite_flutter_plus" // Or another custom name
+            ),
+            "nativeLibs" to mapOf(
+                "tflite_flutter_plus" to mapOf(
+                    "tflite" to "org.tensorflow:tensorflow-lite:2.14.0",
+                    "tflite_gpu" to "org.tensorflow:tensorflow-lite-gpu:2.14.0",
+                    // This is the key line that includes all TensorFlow ops
+                    "tflite_flex" to "org.tensorflow:tensorflow-lite-select-tf-ops:2.14.0"
+                )
+            )
+        ))
+
     }
 
     buildTypes {
@@ -47,5 +64,9 @@ flutter {
     source = "../.."
 }  
 dependencies {
-    implementation("org.tensorflow:tensorflow-lite-task-audio:0.4.4")
+    implementation(files("libs/jlibrosa-1.1.8-SNAPSHOT-jar-with-dependencies.jar"))
+    implementation("org.tensorflow:tensorflow-lite-select-tf-ops:2.16.1")
+    //implementation("com.google.ai.edge.litert:litert:1.0.1")
+
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.0.4")
 }

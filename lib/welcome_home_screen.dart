@@ -1,4 +1,4 @@
-// lib/welcome_home_screen.dart
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:eclub_app/app_themes.dart';
 import 'package:eclub_app/home_dashboard_screen.dart';
@@ -6,8 +6,8 @@ import 'package:eclub_app/main.dart';
 import 'package:eclub_app/qr_scan_page.dart';
 import 'package:eclub_app/scream_detection_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:url_launcher/url_launcher.dart';
 import 'package:eclub_app/location_service.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 class WelcomeHomeScreen extends StatefulWidget {
   const WelcomeHomeScreen({super.key});
@@ -20,29 +20,95 @@ class _WelcomeHomeScreenState extends State<WelcomeHomeScreen> {
   String _userName = "User";
   bool _isLoading = true;
   bool _isSafeModeActive = false;
+  // REVERTED: Create the instance here again
   late final ScreamDetectionService _screamService;
   late final LocationService _locationService;
+  bool _isDialogShowing = false;
+
+  final ValueNotifier<String> _callPoliceStatusNotifier = ValueNotifier('');
+  Timer? _callPoliceTimer;
 
   @override
   void initState() {
     super.initState();
+    // REVERTED: Initialize the service here
     _screamService = ScreamDetectionService();
     _locationService = LocationService();
     languageNotifier.addListener(_onLanguageChanged);
     _loadUserName();
+    _requestAllPermissions();
   }
+
+  Future<void> _requestAllPermissions() async {
+    final permissions = {
+      Permission.sms: 'For sending emergency messages automatically.',
+      Permission.location: 'To send your location during an emergency.',
+      Permission.microphone: 'For the scream detection feature.',
+      Permission.camera: 'To scan QR codes and capture evidence.',
+      Permission.contacts: 'To select emergency contacts.',
+      Permission.notification: 'To show confirmation alerts.',
+    };
+
+    for (var permission in permissions.entries) {
+      final status = await permission.key.status;
+      if (status.isDenied) {
+        if (mounted) {
+          await showDialog(
+            context: context,
+            builder: (context) => AlertDialog(
+              title: Text('${permission.key.toString().split('.').last.capitalize()} Permission Required'),
+              content: Text('Jagriti Suraksha requires this permission:\n\n${permission.value}'),
+              actions: [
+                TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Cancel')),
+                TextButton(
+                  onPressed: () async {
+                    Navigator.of(context).pop();
+                    await permission.key.request();
+                  },
+                  child: const Text('Grant Permission'),
+                ),
+              ],
+            ),
+          );
+        }
+      }
+    }
+  }
+
+  void _showScreamDetectedDialog() {
+    if (_isDialogShowing) return;
+    setState(() => _isDialogShowing = true);
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) {
+        final isHindi = languageNotifier.isHindi;
+        return AlertDialog(
+          title: Text(isHindi ? 'चीख का पता चला!' : 'Scream Detected!'),
+          content: Text(isHindi
+              ? 'यदि यह एक झूठा अलार्म है, तो अलर्ट रद्द करने के लिए सूचना को खारिज कर दें।'
+              : 'If this is a false alarm, dismiss the notification to cancel the alert.'),
+          actions: [
+            TextButton(onPressed: () => Navigator.of(context).pop(), child: Text(isHindi ? 'ठीक है' : 'OK')),
+          ],
+        );
+      },
+    ).then((_) => setState(() => _isDialogShowing = false));
+  }
+
 
   @override
   void dispose() {
     languageNotifier.removeListener(_onLanguageChanged);
     _screamService.dispose();
+    _callPoliceStatusNotifier.dispose();
+    _callPoliceTimer?.cancel();
     super.dispose();
   }
 
   void _onLanguageChanged() {
-    if (mounted) {
-      setState(() {});
-    }
+    if (mounted) setState(() {});
   }
 
   Future<void> _loadUserName() async {
@@ -60,38 +126,53 @@ class _WelcomeHomeScreenState extends State<WelcomeHomeScreen> {
 
   String _getGreeting(bool isHindi) {
     final hour = DateTime.now().hour;
-    if (hour < 12) {
-      return isHindi ? 'सुप्रभात' : 'GOOD MORNING';
-    } else if (hour < 17) {
-      return isHindi ? 'नमस्कार' : 'GOOD AFTERNOON';
-    } else if (hour < 21) {
-      return isHindi ? 'शुभ संध्या' : 'GOOD EVENING';
-    } else {
-      return isHindi ? 'शुभ रात्रि' : 'GOOD NIGHT';
-    }
+    if (hour < 12) return isHindi ? 'सुप्रभात' : 'GOOD MORNING';
+    if (hour < 17) return isHindi ? 'नमस्कार' : 'GOOD AFTERNOON';
+    if (hour < 21) return isHindi ? 'शुभ संध्या' : 'GOOD EVENING';
+    return isHindi ? 'शुभ रात्रि' : 'GOOD NIGHT';
   }
+  
+  void _handleCallPolicePress() {
+    notificationService.showCallPoliceConfirmationNotification(onCancel: () {
+      _callPoliceStatusNotifier.value = "Cancelled by user";
+      Future.delayed(const Duration(seconds: 2), () {
+        if (mounted) _callPoliceStatusNotifier.value = "";
+      });
+    });
 
-  Future<void> _sendSmsAndTrack(String phoneNumber, String message) async {
-    _locationService.startTracking();
-    
-    final Uri smsLaunchUri = Uri(
-      scheme: 'sms',
-      path: phoneNumber,
-      queryParameters: <String, String>{'body': Uri.encodeComponent(message)},
-    );
-    try {
-      if (await canLaunchUrl(smsLaunchUri)) {
-        await launchUrl(smsLaunchUri);
+    int countdown = 30;
+    _callPoliceStatusNotifier.value = "Activating in $countdown...";
+    _callPoliceTimer?.cancel();
+    _callPoliceTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      countdown--;
+      if (countdown <= 0) {
+        timer.cancel();
+        _callPoliceStatusNotifier.value = "Activated!";
+        Future.delayed(const Duration(seconds: 2), () {
+            if (mounted) _callPoliceStatusNotifier.value = "";
+        });
+      } else if (_callPoliceStatusNotifier.value.contains("Cancelled")) {
+        timer.cancel();
       }
-    } catch (e) {
-      // Handle error
-    }
+      else {
+        if (mounted) _callPoliceStatusNotifier.value = "Activating in $countdown...";
+      }
+    });
   }
 
-  void _toggleSafeMode(bool isActive) {
+  Future<void> _toggleSafeMode(bool isActive) async {
     setState(() => _isSafeModeActive = isActive);
+    
     if (isActive) {
-      _screamService.start();
+      final prefs = await SharedPreferences.getInstance();
+      final isScreamDetectionEnabled = prefs.getBool('screamDetectionEnabled') ?? true;
+      if (isScreamDetectionEnabled) {
+        _screamService.start();
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Scream detection is off. Turn it on in More Settings.')),
+        );
+      }
     } else {
       _screamService.stop();
       _locationService.stopTracking();
@@ -120,13 +201,13 @@ class _WelcomeHomeScreenState extends State<WelcomeHomeScreen> {
                     width: screenWidth,
                     decoration: const BoxDecoration(
                       color: AppThemes.darkBlue,
-                      borderRadius: BorderRadius.only(
-                        bottomLeft: Radius.circular(50),
-                        bottomRight: Radius.circular(50),
-                      ),
+                      borderRadius: BorderRadius.only(bottomLeft: Radius.circular(50), bottomRight: Radius.circular(50)),
                     ),
                     child: Center(
-                      child: Text('ASTRA', style: Theme.of(context).textTheme.headlineLarge?.copyWith(color: Colors.white, fontSize: 36)),
+                      child: Text(
+                        isHindi ? 'जागृति सुरक्षा' : 'Jagriti Suraksha',
+                        style: Theme.of(context).textTheme.headlineLarge?.copyWith(color: Colors.white, fontSize: 36),
+                      ),
                     ),
                   ),
                 ),
@@ -161,7 +242,7 @@ class _WelcomeHomeScreenState extends State<WelcomeHomeScreen> {
                       ),
                       IconButton(
                         icon: Icon(Icons.camera_alt, size: bottomIconSize),
-                        onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const QrScanPage())),
+                        onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const QrScanPage(initialScanMode: 'photo'))),
                       ),
                       IconButton(
                         icon: Icon(Icons.menu, size: bottomIconSize),
@@ -190,7 +271,7 @@ class _WelcomeHomeScreenState extends State<WelcomeHomeScreen> {
             if (!_isSafeModeActive) {
               _toggleSafeMode(true);
             } else {
-              _sendSmsAndTrack('112', 'Emergency! I am in danger and need help.');
+              _handleCallPolicePress();
             }
           },
           child: AnimatedContainer(
@@ -211,7 +292,37 @@ class _WelcomeHomeScreenState extends State<WelcomeHomeScreen> {
             ),
           ),
         ),
-        const SizedBox(height: 40.0),
+        const SizedBox(height: 20.0),
+        ValueListenableBuilder<String>(
+          valueListenable: _screamService.statusNotifier,
+          builder: (context, status, child) {
+            if (status == "Scream Detected!") {
+              WidgetsBinding.instance.addPostFrameCallback((_) => _showScreamDetectedDialog());
+            }
+            if (status.isEmpty) return const SizedBox(height: 24);
+            
+            Color statusColor;
+            if (status.contains("Scream") || status.contains("Confirming") || status.contains("Activated")) statusColor = Colors.redAccent;
+            else if (status.contains("Cancelled")) statusColor = Colors.green;
+            else statusColor = Theme.of(context).textTheme.bodyLarge?.color ?? Colors.black;
+
+            return _buildStatusBox(status, statusColor, isHindi);
+          },
+        ),
+        ValueListenableBuilder<String>(
+          valueListenable: _callPoliceStatusNotifier,
+          builder: (context, status, child) {
+            if (status.isEmpty) return const SizedBox.shrink();
+            
+            Color statusColor = status.contains("Cancelled") ? Colors.green : Colors.orangeAccent;
+            
+            return Padding(
+              padding: const EdgeInsets.only(top: 8.0),
+              child: _buildStatusBox(status, statusColor, isHindi, prefix: isHindi ? "मैनुअल अलर्ट:" : "MANUAL ALERT:"),
+            );
+          },
+        ),
+        const SizedBox(height: 20.0),
         AnimatedOpacity(
           duration: const Duration(milliseconds: 500),
           opacity: _isSafeModeActive ? 1.0 : 0.0,
@@ -233,5 +344,40 @@ class _WelcomeHomeScreenState extends State<WelcomeHomeScreen> {
         ),
       ],
     );
+  }
+
+  Widget _buildStatusBox(String status, Color color, bool isHindi, {String prefix = "STATUS:"}) {
+    final hindiPrefix = prefix == "STATUS:" ? "स्टेटस:" : "मैनुअल अलर्ट:";
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surface,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 4, offset: const Offset(0, 2))
+        ],
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            isHindi ? hindiPrefix : prefix,
+            style: TextStyle(fontWeight: FontWeight.bold, color: Theme.of(context).textTheme.bodySmall?.color),
+          ),
+          const SizedBox(width: 8),
+          Text(
+            status,
+            style: TextStyle(fontWeight: FontWeight.bold, color: color),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+extension StringExtension on String {
+  String capitalize() {
+    if (isEmpty) return this;
+    return "${this[0].toUpperCase()}${substring(1).toLowerCase()}";
   }
 }
