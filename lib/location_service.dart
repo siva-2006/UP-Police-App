@@ -11,7 +11,7 @@ class LocationService {
   Timer? _timer;
   String? _userPhone;
   
-  final String _serverUrl = 'http://192.168.137.1:3000'; // <-- IMPORTANT: Replace with your server URL
+  final String _serverUrl = 'https://340a2c6ff635.ngrok-free.app'; // <-- IMPORTANT: Replace with your server URL
 
   LocationService() {
     _init();

@@ -1,4 +1,3 @@
-// lib/login_screen.dart
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
@@ -21,7 +20,7 @@ class _LoginScreenState extends State<LoginScreen> {
   bool _isLoading = false;
   String? _phoneErrorText;
   
-  final String _serverUrl = 'http://192.168.137.1:3000';
+  final String _serverUrl = 'https://340a2c6ff635.ngrok-free.app';
 
   @override
   void dispose() {
@@ -31,18 +30,22 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _checkUserExists() async {
-    if (_phoneController.text.trim().length != 10) {
+    final phone = _phoneController.text.trim();
+    if (phone.length != 10) {
       if (mounted) setState(() => _userExists = false);
       return;
     }
     setState(() => _isLoading = true);
     try {
       final response = await http.get(
-        Uri.parse('$_serverUrl/user/exists/${_phoneController.text.trim()}'),
+        Uri.parse('$_serverUrl/user/exists/$phone'),
       );
-      if (response.statusCode == 200) {
+      if (mounted && response.statusCode == 200) {
         final data = jsonDecode(response.body);
-        if (mounted) setState(() => _userExists = data['exists']);
+        setState(() => _userExists = data['exists']);
+      } else {
+        // Handle server error if needed
+        if(mounted) setState(() => _userExists = false);
       }
     } catch (e) {
       if (mounted) {
@@ -54,16 +57,29 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _handleProceed() async {
-    setState(() => _isLoading = true);
+    final phone = _phoneController.text.trim();
     final isHindi = languageNotifier.isHindi;
 
+    if (phone.length != 10) {
+      setState(() {
+        _phoneErrorText = isHindi ? 'कृपया एक मान्य 10-अंकीय फ़ोन नंबर दर्ज करें' : 'Enter a valid 10-digit number';
+      });
+      return;
+    }
+
+    setState(() {
+      _isLoading = true;
+      _phoneErrorText = null;
+    });
+
     if (_userExists) {
+      // --- LOGIN LOGIC ---
       try {
         final response = await http.post(
           Uri.parse('$_serverUrl/user/login'),
           headers: {'Content-Type': 'application/json'},
           body: json.encode({
-            'phoneNumber': _phoneController.text.trim(),
+            'phoneNumber': phone,
             'pin': _pinController.text.trim(),
           }),
         );
@@ -81,14 +97,11 @@ class _LoginScreenState extends State<LoginScreen> {
         if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Login failed. Check server connection.")));
       }
     } else {
-      if (_phoneController.text.trim().length == 10) {
-         Navigator.push(context, MaterialPageRoute(builder: (context) => EnterDetailsScreen(phoneNumber: _phoneController.text.trim())));
-      } else {
-        setState(() {
-          _phoneErrorText = isHindi ? 'कृपया एक मान्य 10-अंकीय फ़ोन नंबर दर्ज करें' : 'Enter valid 10-digit number';
-        });
-      }
+      // --- REGISTRATION LOGIC ---
+      // If user doesn't exist, navigate to the details screen to register.
+      Navigator.push(context, MaterialPageRoute(builder: (context) => EnterDetailsScreen(phoneNumber: phone)));
     }
+    
     if (mounted) setState(() => _isLoading = false);
   }
 
@@ -118,7 +131,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                     ),
                     child: Center(
-                      child: Text(isHindi ? 'जागृति सुरक्षा' : 'Jagriti Suraksha', style: Theme.of(context).textTheme.headlineLarge?.copyWith(fontSize: 26, color: Colors.white)),
+                      child: Text(isHindi ? 'जागृति सुरक्षा' : 'Jagriti Suraksha', style: Theme.of(context).textTheme.headlineLarge?.copyWith(fontSize: 36, color: Colors.white)),
                     ),
                   ),
                   SizedBox(height: screenHeight * 0.03),

@@ -18,7 +18,7 @@ class _RideHistoryPageState extends State<RideHistoryPage> {
   List<dynamic> _rides = [];
   bool _isLoading = true;
   
-  final String _serverUrl = 'http://192.168.137.1:3000';
+  final String _serverUrl = 'https://340a2c6ff635.ngrok-free.app';
 
   @override
   void initState() {

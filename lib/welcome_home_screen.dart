@@ -20,8 +20,7 @@ class _WelcomeHomeScreenState extends State<WelcomeHomeScreen> {
   String _userName = "User";
   bool _isLoading = true;
   bool _isSafeModeActive = false;
-  // REVERTED: Create the instance here again
-  late final ScreamDetectionService _screamService;
+  late final ScreamDetectionService _screamService = ScreamDetectionService();
   late final LocationService _locationService;
   bool _isDialogShowing = false;
 
@@ -31,8 +30,6 @@ class _WelcomeHomeScreenState extends State<WelcomeHomeScreen> {
   @override
   void initState() {
     super.initState();
-    // REVERTED: Initialize the service here
-    _screamService = ScreamDetectionService();
     _locationService = LocationService();
     languageNotifier.addListener(_onLanguageChanged);
     _loadUserName();
@@ -44,7 +41,7 @@ class _WelcomeHomeScreenState extends State<WelcomeHomeScreen> {
       Permission.sms: 'For sending emergency messages automatically.',
       Permission.location: 'To send your location during an emergency.',
       Permission.microphone: 'For the scream detection feature.',
-      Permission.camera: 'To scan QR codes and capture evidence.',
+      Permission.camera: 'To scan QR codes for driver details.',
       Permission.contacts: 'To select emergency contacts.',
       Permission.notification: 'To show confirmation alerts.',
     };
@@ -101,7 +98,10 @@ class _WelcomeHomeScreenState extends State<WelcomeHomeScreen> {
   @override
   void dispose() {
     languageNotifier.removeListener(_onLanguageChanged);
-    _screamService.dispose();
+    // CORRECTED: Do NOT dispose the scream service here, as it's a singleton
+    // that should live for the entire app lifecycle.
+    // _screamService.dispose(); 
+    
     _callPoliceStatusNotifier.dispose();
     _callPoliceTimer?.cancel();
     super.dispose();
@@ -234,15 +234,11 @@ class _WelcomeHomeScreenState extends State<WelcomeHomeScreen> {
                 Padding(
                   padding: EdgeInsets.symmetric(horizontal: screenWidth * 0.1, vertical: 20),
                   child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceAround,
+                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                     children: [
                       IconButton(
                         icon: Icon(Icons.qr_code_scanner, size: bottomIconSize),
                         onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const QrScanPage())),
-                      ),
-                      IconButton(
-                        icon: Icon(Icons.camera_alt, size: bottomIconSize),
-                        onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const QrScanPage(initialScanMode: 'photo'))),
                       ),
                       IconButton(
                         icon: Icon(Icons.menu, size: bottomIconSize),

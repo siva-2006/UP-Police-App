@@ -8,7 +8,8 @@ import 'package:eclub_app/language_notifier.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:eclub_app/notification_service.dart';
-
+import 'package:workmanager/workmanager.dart';
+import 'package:eclub_app/background_tasks.dart';
 
 ThemeNotifier themeNotifier = ThemeNotifier();
 LanguageNotifier languageNotifier = LanguageNotifier();
@@ -23,6 +24,12 @@ void main() async {
   await Hive.initFlutter(); // Initialize Hive
   await Hive.openBox('emergency_contacts'); // Open a box for contacts
   await Hive.openBox('user_profile');
+  
+  // Initialize workmanager
+  await Workmanager().initialize(
+    callbackDispatcher,
+    isInDebugMode: true,
+  );
   
   final prefs = await SharedPreferences.getInstance();
   final bool isLoggedIn = prefs.getString('user_phone') != null;

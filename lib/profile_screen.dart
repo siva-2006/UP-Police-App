@@ -25,7 +25,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   bool _isEditing = false;
   String? _userPhone;
   
-  final String _serverUrl = 'http://192.168.137.1:3000';
+  final String _serverUrl = 'https://340a2c6ff635.ngrok-free.app';
   late final Box _profileBox;
 
   @override

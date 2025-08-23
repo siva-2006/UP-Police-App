@@ -24,7 +24,7 @@ class _EnterDetailsScreenState extends State<EnterDetailsScreen> {
   final TextEditingController _dobController = TextEditingController();
   bool _isLoading = false;
 
-  final String _serverUrl = 'http://192.168.137.1:3000';
+  final String _serverUrl = 'https://340a2c6ff635.ngrok-free.app';
 
   @override
   void dispose() {
@@ -133,15 +133,26 @@ class _EnterDetailsScreenState extends State<EnterDetailsScreen> {
                       isPassword: true,
                       maxLength: 4,
                       keyboardType: TextInputType.number,
-                      validator: (v) => v!.length != 4 ? (isHindi ? 'पिन 4 अंकों का होना चाहिए' : 'PIN must be 4 digits') : null,
+                      validator: (v) {
+                        if (v!.isEmpty) return isHindi ? 'कृपया पिन दर्ज करें' : 'Please enter a PIN';
+                        if (v.length != 4) return isHindi ? 'पिन 4 अंकों का होना चाहिए' : 'PIN must be 4 digits';
+                        if (int.tryParse(v) == null) return isHindi ? 'केवल अंक दर्ज करें' : 'Please enter only numbers';
+                        return null;
+                      },
                     ),
                     const SizedBox(height: 24),
                     _buildTextFormField(
                       context: context,
                       controller: _aadhaarController,
-                      label: isHindi ? 'आधार नंबर' : 'Aadhaar Number',
+                      label: isHindi ? 'आधार नंबर (वैकल्पिक)' : 'Aadhaar Number (Optional)',
                       keyboardType: TextInputType.number,
-                      maxLength: 12
+                      maxLength: 12,
+                      validator: (v) {
+                        if (v!.isNotEmpty && v.length != 12) {
+                          return isHindi ? 'आधार 12 अंकों का होना चाहिए' : 'Aadhaar must be 12 digits';
+                        }
+                        return null;
+                      },
                     ),
                      const SizedBox(height: 24),
                     _buildTextFormField(
@@ -150,7 +161,8 @@ class _EnterDetailsScreenState extends State<EnterDetailsScreen> {
                       label: isHindi ? 'जन्म तिथि' : 'Date of Birth',
                       readOnly: true,
                       onTap: () => _selectDate(context),
-                      suffixIcon: const Icon(Icons.calendar_today)
+                      suffixIcon: const Icon(Icons.calendar_today),
+                      validator: (v) => v!.isEmpty ? (isHindi ? 'कृपया अपनी जन्मतिथि चुनें' : 'Please select your date of birth') : null,
                     ),
                     const SizedBox(height: 40),
                     Padding(

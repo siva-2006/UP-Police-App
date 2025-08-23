@@ -6,6 +6,7 @@ import 'package:eclub_app/main.dart';
 import 'package:flutter_contacts/flutter_contacts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:hive/hive.dart';
+import 'package:permission_handler/permission_handler.dart'; // Import permission_handler
 
 class EmergencyContactsScreen extends StatefulWidget {
   const EmergencyContactsScreen({super.key});
@@ -20,7 +21,7 @@ class _EmergencyContactsScreenState extends State<EmergencyContactsScreen> {
   String? _userPhone;
   String? expandedContactId;
 
-  final String _serverUrl = 'http://192.168.137.1:3000';
+  final String _serverUrl = 'https://340a2c6ff635.ngrok-free.app';
   late final Box _contactsBox;
 
   @override
@@ -40,7 +41,6 @@ class _EmergencyContactsScreenState extends State<EmergencyContactsScreen> {
     }
     
     try {
-      // Try to fetch from the server
       final response = await http.get(Uri.parse('$_serverUrl/user/$_userPhone/contacts'));
       if (mounted && response.statusCode == 200) {
         final serverContacts = jsonDecode(response.body);
@@ -48,14 +48,11 @@ class _EmergencyContactsScreenState extends State<EmergencyContactsScreen> {
           _contacts = serverContacts;
           _isLoading = false;
         });
-        // Save the fresh contacts to the local database
         await _contactsBox.put('contacts', serverContacts);
       } else {
-        // If server fails, load from local database
         _loadFromLocal();
       }
     } catch (e) {
-       // If there's a network error, load from local database
        _loadFromLocal();
     }
   }
@@ -75,32 +72,61 @@ class _EmergencyContactsScreenState extends State<EmergencyContactsScreen> {
     }
   }
   
+  // UPDATED: This function is now more robust.
   Future<void> _pickAndSaveContact() async {
-    if (await FlutterContacts.requestPermission()) {
-      final Contact? contact = await FlutterContacts.openExternalPick();
-      if (contact != null && contact.phones.isNotEmpty) {
-        final newName = contact.displayName;
-        final newNumber = contact.phones.first.number;
-
-        final isDuplicate = _contacts.any((c) => c['phone'] == newNumber);
-        if (isDuplicate) {
-          if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Contact already exists.')));
+    try {
+      // 1. Explicitly check permission status
+      final status = await Permission.contacts.status;
+      if (status.isDenied) {
+        debugPrint("Contacts permission is denied. Requesting now...");
+        if (await Permission.contacts.request().isGranted) {
+          debugPrint("Contacts permission granted.");
+        } else {
+          debugPrint("Contacts permission was permanently denied by the user.");
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Contacts permission is required to add an emergency contact.')));
+          }
           return;
         }
+      }
+      
+      if (await Permission.contacts.isGranted) {
+        debugPrint("Permission is granted, attempting to open contact picker...");
+        final Contact? contact = await FlutterContacts.openExternalPick();
+        
+        if (contact != null) {
+          if (contact.phones.isNotEmpty) {
+            final newName = contact.displayName;
+            final newNumber = contact.phones.first.number;
 
-        try {
-          await http.post(
-            Uri.parse('$_serverUrl/user/$_userPhone/contacts'),
-            headers: {'Content-Type': 'application/json'},
-            body: json.encode({'name': newName, 'phone': newNumber}),
-          );
-          _loadContacts();
-        } catch (e) {
-          if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Failed to add contact. Check your internet connection.')));
+            final isDuplicate = _contacts.any((c) => c['phone'] == newNumber);
+            if (isDuplicate) {
+              if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Contact already exists.')));
+              return;
+            }
+
+            await http.post(
+              Uri.parse('$_serverUrl/user/$_userPhone/contacts'),
+              headers: {'Content-Type': 'application/json'},
+              body: json.encode({'name': newName, 'phone': newNumber}),
+            );
+            _loadContacts();
+          } else {
+            debugPrint("Selected contact has no phone number.");
+            if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Selected contact does not have a phone number.')));
+          }
+        } else {
+          debugPrint("Contact picking was cancelled by the user.");
         }
+      }
+    } catch (e) {
+      debugPrint("An error occurred in _pickAndSaveContact: $e");
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('An unexpected error occurred: ${e.toString()}')));
       }
     }
   }
+
 
   Future<void> _deleteContact(String contactId) async {
     try {

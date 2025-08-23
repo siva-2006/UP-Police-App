@@ -1,3 +1,4 @@
+import 'dart:async'; // ADD THIS LINE
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:geocoding/geocoding.dart' as geo;
@@ -8,69 +9,73 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:another_telephony/telephony.dart';
 
 class EmergencyService {
-  final String _serverUrl = 'http://192.168.137.1:3000';
+  final String _serverUrl = 'https://340a2c6ff635.ngrok-free.app';
   final Location _location = Location();
   final Telephony telephony = Telephony.instance;
 
-  // This is the original function for scream detection
+  Timer? _alertTimer;
+
   Future<void> triggerScreamEmergencyActions() async {
-    final LocationData? currentLocation = await _getCurrentLocation();
-    if (currentLocation == null || currentLocation.latitude == null || currentLocation.longitude == null) {
-      debugPrint("Could not get location. Aborting emergency actions.");
-      return;
-    }
-
-    final lat = currentLocation.latitude!;
-    final lon = currentLocation.longitude!;
-    final String mapsUrl = "https://www.google.com/maps?q=$lat,$lon";
-
-    await _sendLocationToPortal(lat, lon, "Scream Detected");
-
-    final contacts = await _getEmergencyContacts();
-    if (contacts.isEmpty) {
-      debugPrint("No emergency contacts found to alert.");
-      return;
-    }
-
-    final String message = "Emergency! A scream was detected. My current location is: $mapsUrl";
-    final List<String> recipients = contacts.map((c) => c['phone'] as String).where((phone) => phone.isNotEmpty).toList();
-    
-    if (recipients.isNotEmpty) {
-      await _sendSms(recipients, message);
-    }
+    _startPeriodicAlerts(triggerReason: "Scream Detected");
   }
 
-  // UPDATED: This function now also sends SMS to emergency contacts
   Future<void> triggerCallPoliceAction() async {
-    debugPrint("Triggering 'Call Police' action...");
-    final LocationData? currentLocation = await _getCurrentLocation();
-    if (currentLocation == null || currentLocation.latitude == null || currentLocation.longitude == null) {
-      debugPrint("Could not get location for 'Call Police' action.");
-      return;
-    }
-
-    final lat = currentLocation.latitude!;
-    final lon = currentLocation.longitude!;
-    final String mapsUrl = "https://www.google.com/maps?q=$lat,$lon";
-
-    // Send location to the backend
-    await _sendLocationToPortal(lat, lon, "Call Police Button Pressed");
-
-    // Also send SMS to emergency contacts
-    final contacts = await _getEmergencyContacts();
-    if (contacts.isEmpty) {
-      debugPrint("No emergency contacts found to alert.");
-      return;
-    }
-
-    final String message = "Emergency! The Call Police button was activated. My current location is: $mapsUrl";
-    final List<String> recipients = contacts.map((c) => c['phone'] as String).where((phone) => phone.isNotEmpty).toList();
-
-    if (recipients.isNotEmpty) {
-      await _sendSms(recipients, message);
-    }
+    _startPeriodicAlerts(triggerReason: "Call Police Button Pressed");
   }
 
+  Future<void> _startPeriodicAlerts({required String triggerReason}) async {
+    _alertTimer?.cancel();
+
+    final prefs = await SharedPreferences.getInstance();
+    final frequency = int.tryParse(prefs.getString('locationFrequency') ?? '30') ?? 30;
+    
+    int alertCount = 0;
+    const maxAlerts = 5;
+
+    _alertTimer = Timer.periodic(Duration(seconds: frequency), (timer) async {
+      if (alertCount >= maxAlerts) {
+        timer.cancel();
+        debugPrint("Finished sending periodic alerts.");
+        return;
+      }
+
+      alertCount++;
+      debugPrint("Sending alert #$alertCount for reason: $triggerReason");
+
+      final LocationData? currentLocation = await _getCurrentLocation();
+      if (currentLocation == null || currentLocation.latitude == null || currentLocation.longitude == null) {
+        debugPrint("Could not get location for periodic alert.");
+        return;
+      }
+
+      final lat = currentLocation.latitude!;
+      final lon = currentLocation.longitude!;
+      final String mapsUrl = "https://www.google.com/maps?q=$lat,$lon";
+
+      await _sendLocationToPortal(lat, lon, triggerReason);
+
+      final contacts = await _getEmergencyContacts();
+      if (contacts.isEmpty) {
+        debugPrint("No emergency contacts found for periodic alert.");
+        return;
+      }
+
+      final message = triggerReason == "Scream Detected"
+          ? "Emergency! A scream was detected. My current location is: $mapsUrl (Update #$alertCount)"
+          : "Emergency! The Call Police button was activated. My current location is: $mapsUrl (Update #$alertCount)";
+      
+      final List<String> recipients = contacts.map((c) => c['phone'] as String).where((phone) => phone.isNotEmpty).toList();
+      
+      if (recipients.isNotEmpty) {
+        await _sendSms(recipients, message);
+      }
+    });
+  }
+
+  void cancelPeriodicAlerts() {
+    _alertTimer?.cancel();
+    debugPrint("Periodic alerts have been cancelled by the user.");
+  }
 
   Future<LocationData?> _getCurrentLocation() async {
     bool serviceEnabled = await _location.serviceEnabled();
@@ -91,6 +96,7 @@ class EmergencyService {
   Future<void> _sendLocationToPortal(double lat, double lon, String triggerReason) async {
     final prefs = await SharedPreferences.getInstance();
     final userPhone = prefs.getString('user_phone');
+    final userName = prefs.getString('user_name');
     if (userPhone == null) return;
 
     String address = "Address not found";
@@ -110,11 +116,13 @@ class EmergencyService {
         headers: {'Content-Type': 'application/json'},
         body: json.encode({
           'phoneNumber': userPhone,
+          'name': userName,
           'latitude': lat,
           'longitude': lon,
           'address': address,
           'triggerReason': triggerReason,
           'timestamp': DateTime.now().toIso8601String(),
+          'status': 'new',
         }),
       );
       debugPrint("Successfully sent location to portal. Reason: $triggerReason");

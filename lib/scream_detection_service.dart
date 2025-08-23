@@ -1,3 +1,4 @@
+// lib/scream_detection_service.dart
 import 'dart:async';
 import 'dart:typed_data';
 import 'package:eclub_app/main.dart';
@@ -7,6 +8,7 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:record/record.dart';
 import 'package:tflite_flutter/tflite_flutter.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:workmanager/workmanager.dart';
 
 class ScreamDetectionService {
   // --- SINGLETON PATTERN SETUP ---
@@ -71,44 +73,14 @@ class ScreamDetectionService {
     }
 
     _isDetecting = true;
-    _recorder = AudioRecorder();
     debugPrint("Scream detection started...");
 
-    while (_isDetecting) {
-      try {
-        if (statusNotifier.value.isEmpty || statusNotifier.value == "Listening...") {
-          statusNotifier.value = "Listening...";
-        }
-
-        final tempDir = await getTemporaryDirectory();
-        final path = '${tempDir.path}/temp_audio.wav';
-        const config = RecordConfig(encoder: AudioEncoder.wav, sampleRate: 22050, numChannels: 1);
-
-        await _recorder?.start(config, path: path);
-        await Future.delayed(const Duration(seconds: 3));
-        final audioPath = await _recorder?.stop();
-
-        if (audioPath == null || !_isDetecting) break;
-
-        final Float32List spectrogram = await platform.invokeMethod('getSpectrogram', {'path': audioPath});
-        final input = spectrogram.reshape(_inputShape);
-        var output = List.filled(1, 0.0).reshape([1, 1]);
-        _interpreter?.run(input, output);
-
-        final double score = output[0][0];
-        if (score > 0.8) {
-           debugPrint('✅✅✅Scream detected! Confidence: $score');
-           await _handleScreamDetected();
-        } else {
-           debugPrint('😔😔😔No scream detected. Confidence: $score');
-        }
-
-      } catch (e) {
-         debugPrint('Error during audio processing loop: $e');
-         statusNotifier.value = "Error";
-         await Future.delayed(const Duration(seconds: 1));
-      }
-    }
+    // Register a periodic task for scream detection
+    await Workmanager().registerPeriodicTask(
+      "scream_detection_task",
+      "scream_detection",
+      frequency: const Duration(minutes: 15), // Minimum frequency for periodic tasks
+    );
   }
 
   Future<void> _handleScreamDetected() async {
@@ -159,12 +131,11 @@ class ScreamDetectionService {
     _isDetecting = false;
     statusNotifier.value = "";
     _cooldownTimer?.cancel();
-    notificationService.cancelAllConfirmations();
-    if (await _recorder?.isRecording() ?? false) {
-      await _recorder?.stop();
-    }
-    await _recorder?.dispose();
-    _recorder = null;
+    notificationService.cancelConfirmation();
+    
+    // Cancel the background task
+    await Workmanager().cancelByUniqueName("scream_detection_task");
+
     debugPrint("Scream detection stopped.");
   }
 

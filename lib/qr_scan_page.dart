@@ -1,136 +1,36 @@
 import 'dart:convert';
-import 'dart:io';
-
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:camera/camera.dart';
 import 'package:http/http.dart' as http;
 import 'package:mobile_scanner/mobile_scanner.dart';
 
 import 'app_themes.dart';
 
 class QrScanPage extends StatefulWidget {
-  final String initialScanMode;
-
-  const QrScanPage({
-    super.key,
-    this.initialScanMode = 'scan',
-  });
+  const QrScanPage({super.key});
 
   @override
   State<QrScanPage> createState() => _QrScanPageState();
 }
 
-class _QrScanPageState extends State<QrScanPage> with WidgetsBindingObserver {
+class _QrScanPageState extends State<QrScanPage> {
   final MobileScannerController _qrController = MobileScannerController();
-  CameraController? _photoController;
-  List<CameraDescription>? _cameras;
-  XFile? _capturedImageFile;
-
-  late String _scanMode;
   bool _isProcessing = false;
   bool _isTorchOn = false;
-
   Map<String, dynamic>? _driverData;
 
   @override
-  void initState() {
-    super.initState();
-    WidgetsBinding.instance.addObserver(this);
-    _scanMode = widget.initialScanMode;
-
-    if (_scanMode == 'photo') {
-      _initializePhotoCamera();
-    }
-  }
-
-  Future<void> _initializePhotoCamera() async {
-    // Ensure the QR scanner is not running
-    if (_qrController.isStarting) {
-      await _qrController.stop();
-    }
-    
-    _cameras = await availableCameras();
-    if (_cameras != null && _cameras!.isNotEmpty) {
-      _photoController = CameraController(
-        _cameras![0],
-        ResolutionPreset.high,
-      );
-      await _photoController!.initialize();
-      if (mounted) {
-        setState(() {});
-      }
-    }
-  }
-
-  // CORRECTED: This function is now async to handle camera resource management properly.
-  Future<void> _setScanMode(String mode) async {
-    if (_scanMode == mode) return;
-
-    if (mode == 'photo') {
-      // Stop QR scanner and initialize photo camera
-      await _qrController.stop();
-      await _initializePhotoCamera();
-    } else {
-      // Dispose photo camera and start QR scanner
-      await _photoController?.dispose();
-      _photoController = null;
-      // Let the MobileScanner widget restart the controller automatically
-    }
-
-    if (mounted) {
-      setState(() {
-        _scanMode = mode;
-        _isProcessing = false;
-        _capturedImageFile = null;
-      });
-    }
-  }
-
-  @override
-  void didChangeAppLifecycleState(AppLifecycleState state) {
-    super.didChangeAppLifecycleState(state);
-    if (_scanMode == 'scan') return;
-
-    final controller = _photoController;
-    if (controller == null || !controller.value.isInitialized) {
-      return;
-    }
-    if (state == AppLifecycleState.inactive) {
-      controller.dispose();
-    } else if (state == AppLifecycleState.resumed) {
-      _initializePhotoCamera();
-    }
-  }
-
-  @override
   void dispose() {
-    WidgetsBinding.instance.removeObserver(this);
     _qrController.dispose();
-    _photoController?.dispose();
     super.dispose();
   }
 
-  void _retakePhoto() {
-    setState(() {
-      _capturedImageFile = null;
-      _isProcessing = false;
-    });
-  }
-  
-  void _sendEvidence() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Evidence sent. Reporting feature coming soon.')),
-    );
-    // This will now correctly await the camera resource handover
-    _setScanMode('scan');
-  }
-
   void _startScanning() {
-    _setScanMode('scan');
     setState(() {
       _driverData = null;
+      _isProcessing = false;
     });
+    // The MobileScanner widget will automatically restart the controller
   }
 
   Future<void> _fetchDriverDetails(String driverId) async {
@@ -138,83 +38,22 @@ class _QrScanPageState extends State<QrScanPage> with WidgetsBindingObserver {
       _isProcessing = true;
     });
 
-    final String apiUrl = 'http://192.168.137.1:5000/api/driver/data/$driverId';
+    final String apiUrl = 'https://5a4d5b957470.ngrok-free.app/api/driver/data/$driverId';
 
     try {
       final response = await http.get(Uri.parse(apiUrl));
 
       if (response.statusCode == 200) {
         final Map<String, dynamic> data = json.decode(response.body);
-        if (kDebugMode) {
-          print('Driver details fetched: $data');
-        }
         if(mounted) setState(() => _driverData = data);
       } else {
-        if (kDebugMode) print('Failed to load driver details. Status code: ${response.statusCode}');
         if(mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed to get driver details: ${response.statusCode}')));
       }
     } catch (e) {
-      if (kDebugMode) print('Error fetching driver details: $e');
       if(mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Network error: Could not connect to server.')));
     } finally {
       if (mounted) setState(() => _isProcessing = false);
     }
-  }
-
-  Widget _buildDriverDetailsView() {
-    if (_driverData == null) return const SizedBox.shrink();
-    
-    return Container(
-      color: Colors.black,
-      width: double.infinity,
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.all(20),
-        child: Container(
-          padding: const EdgeInsets.all(20),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(15),
-            boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.15), blurRadius: 8, offset: const Offset(0, 4))],
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text('Driver Details', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.black87)),
-              const SizedBox(height: 10),
-              Divider(color: Colors.grey[300]),
-              const SizedBox(height: 10),
-              _buildDetailRow('First Name', _driverData!['firstName']),
-              _buildDetailRow('Last Name', _driverData!['lastName']),
-              _buildDetailRow('Vehicle Number', _driverData!['vehicleNum']),
-              _buildDetailRow('Mobile', _driverData!['mobile']),
-              const SizedBox(height: 20),
-              ElevatedButton.icon(
-                onPressed: _startScanning,
-                icon: const Icon(Icons.qr_code_scanner, color: Colors.white),
-                label: const Text('Scan Again', style: TextStyle(color: Colors.white)),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppThemes.darkBlue,
-                  minimumSize: const Size(double.infinity, 50),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildDetailRow(String label, dynamic value) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6),
-      child: Row(
-        children: [
-          SizedBox(width: 130, child: Text('$label:', style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 16))),
-          Expanded(child: Text(value?.toString() ?? 'N/A', style: const TextStyle(fontSize: 16))),
-        ],
-      ),
-    );
   }
 
   @override
@@ -222,123 +61,136 @@ class _QrScanPageState extends State<QrScanPage> with WidgetsBindingObserver {
     return Scaffold(
       backgroundColor: Colors.black,
       appBar: AppBar(
-        title: Text(_scanMode == 'scan' ? 'Scan QR Code' : 'Take Photo'),
+        title: const Text('Scan QR Code'),
         backgroundColor: AppThemes.darkBlue,
         actions: [
           IconButton(
             onPressed: () {
               setState(() => _isTorchOn = !_isTorchOn);
-              if (_scanMode == 'scan') {
-                _qrController.toggleTorch();
-              } else {
-                _photoController?.setFlashMode(_isTorchOn ? FlashMode.torch : FlashMode.off);
-              }
+              _qrController.toggleTorch();
             },
             icon: Icon(_isTorchOn ? Icons.flashlight_on : Icons.flashlight_off, color: _isTorchOn ? Colors.yellow : Colors.white),
           ),
         ],
       ),
       body: SafeArea(
-        child: Column(
-          children: [
-            Expanded(child: _buildCameraView()),
-            Container(
-              padding: const EdgeInsets.all(20),
-              color: Colors.black.withOpacity(0.8),
-              child: _capturedImageFile != null ? _buildPhotoControls() : _buildCameraControls(),
+        child: _driverData != null ? _buildDriverDetailsView() : _buildQrScanner(),
+      ),
+    );
+  }
+
+  Widget _buildQrScanner() {
+    return Stack(
+      alignment: Alignment.center,
+      children: [
+        MobileScanner(
+          controller: _qrController,
+          onDetect: (capture) {
+            if (_isProcessing || capture.barcodes.isEmpty) return;
+            final barcode = capture.barcodes.first;
+            if (barcode.rawValue != null) {
+              _qrController.stop();
+              ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('QR Scanned: ${barcode.rawValue}')));
+              _fetchDriverDetails(barcode.rawValue!);
+            }
+          },
+        ),
+        if (_isProcessing)
+          const Center(child: CircularProgressIndicator(valueColor: AlwaysStoppedAnimation<Color>(Colors.white))),
+        Container(
+          width: MediaQuery.of(context).size.width * 0.7,
+          height: MediaQuery.of(context).size.width * 0.7,
+          decoration: BoxDecoration(
+            border: Border.all(color: Colors.white, width: 2),
+            borderRadius: BorderRadius.circular(12),
+          ),
+        ),
+      ],
+    );
+  }
+
+  // UPDATED: This widget is now theme-aware
+  Widget _buildDriverDetailsView() {
+    return Container(
+      // Use the theme's scaffold background color for the backdrop
+      color: Theme.of(context).scaffoldBackgroundColor,
+      width: double.infinity,
+      child: Center(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(20),
+          child: Container(
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              // Use the theme's card color for the box
+              color: Theme.of(context).cardColor,
+              borderRadius: BorderRadius.circular(15),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.15),
+                  blurRadius: 8,
+                  offset: const Offset(0, 4),
+                )
+              ],
             ),
-          ],
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Driver Details',
+                  style: TextStyle(
+                    fontSize: 22,
+                    fontWeight: FontWeight.bold,
+                    // Use the theme's primary text color
+                    color: Theme.of(context).textTheme.bodyLarge?.color,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Divider(color: Colors.grey[300]),
+                const SizedBox(height: 10),
+                _buildDetailRow('First Name', _driverData?['firstName']),
+                _buildDetailRow('Last Name', _driverData?['lastName']),
+                _buildDetailRow('Vehicle Number', _driverData?['vehicleNum']),
+                _buildDetailRow('Mobile', _driverData?['mobile']),
+                const SizedBox(height: 20),
+                ElevatedButton.icon(
+                  onPressed: _startScanning,
+                  icon: const Icon(Icons.qr_code_scanner, color: Colors.white),
+                  label: const Text('Scan Again', style: TextStyle(color: Colors.white)),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppThemes.darkBlue,
+                    minimumSize: const Size(double.infinity, 50),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  ),
+                ),
+              ],
+            ),
+          ),
         ),
       ),
     );
   }
 
-  Widget _buildCameraView() {
-    if (_capturedImageFile != null) return Image.file(File(_capturedImageFile!.path), fit: BoxFit.cover);
-    if (_driverData != null) return _buildDriverDetailsView();
+  // UPDATED: This widget now uses theme colors for text
+  Widget _buildDetailRow(String label, dynamic value) {
+    final textStyle = TextStyle(
+      fontSize: 16,
+      color: Theme.of(context).textTheme.bodyLarge?.color,
+    );
+    final labelStyle = textStyle.copyWith(fontWeight: FontWeight.w600);
 
-    if (_scanMode == 'scan') {
-      return Stack(
-        alignment: Alignment.center,
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Row(
         children: [
-          MobileScanner(
-            controller: _qrController,
-            onDetect: (capture) {
-              if (_isProcessing || capture.barcodes.isEmpty) return;
-              final barcode = capture.barcodes.first;
-              if (barcode.rawValue != null) {
-                _qrController.stop();
-                ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('QR Scanned: ${barcode.rawValue}')));
-                _fetchDriverDetails(barcode.rawValue!);
-              }
-            },
+          SizedBox(
+            width: 130,
+            child: Text('$label:', style: labelStyle),
           ),
-          if (_isProcessing) const Center(child: CircularProgressIndicator(valueColor: AlwaysStoppedAnimation<Color>(Colors.white))),
-          Container(
-            width: MediaQuery.of(context).size.width * 0.7,
-            height: MediaQuery.of(context).size.width * 0.7,
-            decoration: BoxDecoration(border: Border.all(color: Colors.white, width: 2), borderRadius: BorderRadius.circular(12)),
+          Expanded(
+            child: Text(value?.toString() ?? 'N/A', style: textStyle),
           ),
         ],
-      );
-    } else {
-      if (_photoController == null || !_photoController!.value.isInitialized) return const Center(child: CircularProgressIndicator());
-      return CameraPreview(_photoController!);
-    }
-  }
-
-  Widget _buildCameraControls() {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceAround,
-      children: [
-        _buildModeButton('scan', Icons.qr_code_scanner),
-        if (_scanMode == 'photo')
-          GestureDetector(
-            onTap: () async {
-              if (_photoController == null || !_photoController!.value.isInitialized) return;
-              try {
-                final XFile image = await _photoController!.takePicture();
-                if(mounted) setState(() => _capturedImageFile = image);
-              } catch (e) {
-                if (kDebugMode) print("Error taking picture: $e");
-              }
-            },
-            child: Container(
-              padding: const EdgeInsets.all(20),
-              decoration: const BoxDecoration(shape: BoxShape.circle, color: Colors.white),
-              child: const Icon(Icons.camera_alt, color: Colors.black, size: 30),
-            ),
-          ),
-        _buildModeButton('photo', Icons.camera),
-      ],
-    );
-  }
-
-  Widget _buildPhotoControls() {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-      children: [
-        ElevatedButton.icon(
-          onPressed: _retakePhoto,
-          icon: const Icon(Icons.refresh),
-          label: const Text('Retake'),
-          style: ElevatedButton.styleFrom(backgroundColor: Colors.white, foregroundColor: Colors.black),
-        ),
-        ElevatedButton.icon(
-          onPressed: _sendEvidence,
-          icon: const Icon(Icons.send),
-          label: const Text('Send Evidence'),
-          style: ElevatedButton.styleFrom(backgroundColor: AppThemes.emergencyRed, foregroundColor: Colors.white),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildModeButton(String mode, IconData icon) {
-    bool isSelected = _scanMode == mode;
-    return IconButton(
-      onPressed: () => _setScanMode(mode),
-      icon: Icon(icon, color: isSelected ? AppThemes.tealGreen : Colors.white, size: 30),
+      ),
     );
   }
 }
