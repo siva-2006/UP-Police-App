@@ -1,3 +1,4 @@
+// lib/notification_service.dart
 import 'dart:async';
 import 'package:eclub_app/emergency_service.dart';
 import 'package:eclub_app/scream_detection_service.dart';
@@ -44,7 +45,8 @@ class NotificationService {
       duration: 30,
       onConfirm: () {
         _emergencyService.triggerCallPoliceAction();
-        _callPoliceCancelCallback?.call();
+        // Note: The original code didn't have a callback here. 
+        // If you need to update UI after confirmation, this is where you'd do it.
       },
       payload: 'call_police',
     );

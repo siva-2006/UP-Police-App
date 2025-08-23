@@ -1,4 +1,5 @@
-import 'dart:async'; // ADD THIS LINE
+// lib/emergency_service.dart
+import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:geocoding/geocoding.dart' as geo;
@@ -50,7 +51,7 @@ class EmergencyService {
 
       final lat = currentLocation.latitude!;
       final lon = currentLocation.longitude!;
-      final String mapsUrl = "https://www.google.com/maps?q=$lat,$lon";
+      final String mapsUrl = "https://www.google.com/maps/search/?api=1&query=$lat,$lon";
 
       await _sendLocationToPortal(lat, lon, triggerReason);
 

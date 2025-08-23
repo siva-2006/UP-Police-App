@@ -4,18 +4,16 @@ import android.os.Bundle
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
-import io.flutter.plugins.workmanager.WorkmanagerPlugin
+// import io.flutter.plugins.flutter_background_service.FlutterBackgroundService Correct import
 
 class MainActivity: FlutterActivity() {
     private val CHANNEL = "com.eclub_app/audio_processing"
 
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-        // Register the background service plugin
-        WorkmanagerPlugin.setPluginRegistrantCallback { flutterEngine ->
-            // Your other plugins can be registered here
-        }
-    }
+    // Add this method to register the background service plugin
+    // override fun onCreate(savedInstanceState: Bundle?) {
+    //     super.onCreate(savedInstanceState)
+    //     FlutterBackgroundService.setPluginRegistrant(this)
+    // }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
