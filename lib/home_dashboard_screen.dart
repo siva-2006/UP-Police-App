@@ -188,7 +188,7 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
                 const SizedBox(height: 30),
                 _buildMenuButton(isHindi ? 'लाइट/डार्क मोड' : 'Light/Dark Mode', Icons.brightness_6, () => themeNotifier.toggleTheme()),
                 _buildMenuButton(isHindi ? 'आपात संपर्क' : 'Emergency Contacts', Icons.contact_emergency, () => Navigator.push(context, MaterialPageRoute(builder: (context) => const EmergencyContactsScreen()))),
-                _buildMenuButton(isHindi ? 'सवारी का इतिहास' : 'Rides Taken', Icons.history, () => Navigator.push(context, MaterialPageRoute(builder: (context) => const RideHistoryPage()))),
+                _buildMenuButton(isHindi ? 'सवारी का इतिहास' : 'Rides Taken', Icons.history, () => Navigator.push(context, MaterialPageRoute(builder: (context) => RideHistoryPage()))),
                 _buildMenuButton(isHindi ? 'अधिक सेटिंग्स' : 'More Settings', Icons.more_horiz, () => Navigator.push(context, MaterialPageRoute(builder: (context) => const MoreSettingsPage()))),
                 _buildMenuButton(isHindi ? 'भाषा बदलें (English)' : 'Change Language (हिन्दी)', Icons.language, () => languageNotifier.toggleLanguage()),
                 const Spacer(),
