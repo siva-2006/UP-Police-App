@@ -1,8 +1,10 @@
+// lib/qr_scan_page.dart
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:mobile_scanner/mobile_scanner.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'app_themes.dart';
 
@@ -45,6 +47,10 @@ class _QrScanPageState extends State<QrScanPage> {
 
       if (response.statusCode == 200) {
         final Map<String, dynamic> data = json.decode(response.body);
+        if (kDebugMode) {
+          print('Driver details fetched: $data');
+        }
+        await _addRideToHistory(data);
         if(mounted) setState(() => _driverData = data);
       } else {
         if(mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed to get driver details: ${response.statusCode}')));
@@ -53,6 +59,48 @@ class _QrScanPageState extends State<QrScanPage> {
       if(mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Network error: Could not connect to server.')));
     } finally {
       if (mounted) setState(() => _isProcessing = false);
+    }
+  }
+
+  Future<void> _addRideToHistory(Map<String, dynamic> driverDetails) async {
+    final prefs = await SharedPreferences.getInstance();
+    final String? userPhone = prefs.getString('user_phone');
+    
+    if (userPhone == null) {
+      if(mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('User not logged in. Please log in again.')));
+      }
+      return;
+    }
+      
+    const String serverUrl = 'https://340a2c6ff635.ngrok-free.app';
+    final String userApiUrl = '$serverUrl/user/$userPhone/rides';
+    
+    final rideData = {
+      'name': '${driverDetails['firstName']} ${driverDetails['lastName']}',
+      'vehicleNumber': driverDetails['vehicleNum'],
+      'phone': driverDetails['mobile'],
+      'timestamp': DateTime.now().toIso8601String(),
+    };
+    
+    try {
+      final response = await http.post(
+        Uri.parse(userApiUrl),
+        headers: <String, String>{
+          'Content-Type': 'application/json; charset=UTF-8',
+        },
+        body: jsonEncode(rideData),
+      );
+    
+      if (response.statusCode != 201) { // Backend returns 201 Created
+        if (kDebugMode) print('Failed to save ride history. Status code: ${response.statusCode}');
+        if(mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed to save ride history: ${response.statusCode}')));
+      } else {
+        if (kDebugMode) print('Ride history saved successfully.');
+      }
+    } catch (e) {
+      if (kDebugMode) print('Error saving ride history: $e');
+      if(mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Network error: Could not connect to user database.')));
     }
   }
 
